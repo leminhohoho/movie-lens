@@ -4,6 +4,7 @@ go 1.24.6
 
 require (
 	github.com/chromedp/chromedp v0.14.1
+	github.com/joho/godotenv v1.5.1
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.0
 )
