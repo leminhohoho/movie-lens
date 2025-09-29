@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/chromedp/chromedp"
-	"github.com/leminhohoho/movie-lens/scraper/pkg/config"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -22,24 +21,18 @@ type Scraper struct {
 	errChan chan error
 }
 
-func NewScraper(cfg config.ScraperConfig, logger *slog.Logger, errChan chan error) (*Scraper, error) {
+func NewScraper(logger *slog.Logger, errChan chan error) (*Scraper, error) {
 	var baseCtx context.Context
 
 	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		dbPath = cfg.DbPath
-	}
-
 	proxyURL := os.Getenv("PROXY_URL")
-	if proxyURL == "" {
-		proxyURL = cfg.ProxyURL
-	}
+	browserAddr := os.Getenv("BROWSER_ADDR")
 
-	if cfg.BrowserAddr != "" {
-		baseCtx, _ = chromedp.NewRemoteAllocator(context.Background(), cfg.BrowserAddr)
+	if browserAddr != "" {
+		baseCtx, _ = chromedp.NewRemoteAllocator(context.Background(), browserAddr)
 	} else {
 		baseCtx, _ = chromedp.NewExecAllocator(context.Background(),
-			chromedp.Flag("headless", cfg.Headless || os.Getenv("HEADLESS") == "true"),
+			chromedp.Flag("headless", os.Getenv("HEADLESS") == "true"),
 			chromedp.ProxyServer(proxyURL),
 			// NOTE: More options will be added in the future
 		)
@@ -80,3 +73,5 @@ func NewScraper(cfg config.ScraperConfig, logger *slog.Logger, errChan chan erro
 		errChan: errChan,
 	}, nil
 }
+
+func (s *Scraper) Run() {}
