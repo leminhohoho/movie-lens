@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/chromedp/chromedp"
 	"gorm.io/driver/sqlite"
@@ -27,21 +28,30 @@ func NewScraper(logger *slog.Logger, errChan chan error) (*Scraper, error) {
 	dbPath := os.Getenv("DB_PATH")
 	proxyURL := os.Getenv("PROXY_URL")
 	browserAddr := os.Getenv("BROWSER_ADDR")
+	userDataDir := os.Getenv("USER_DATA_DIR")
 
 	if browserAddr != "" {
 		baseCtx, _ = chromedp.NewRemoteAllocator(context.Background(), browserAddr)
 	} else {
-		baseCtx, _ = chromedp.NewExecAllocator(context.Background(),
-			chromedp.Flag("headless", os.Getenv("HEADLESS") == "true"),
-			chromedp.ProxyServer(proxyURL),
+		opts := []func(*chromedp.ExecAllocator){
+			chromedp.Flag("headless", os.Getenv("HEADLESS") == "TRUE"),
 			// NOTE: More options will be added in the future
-		)
+		}
+
+		if proxyURL != "" {
+			opts = append(opts, chromedp.ProxyServer(proxyURL))
+		}
+
+		if userDataDir != "" {
+			opts = append(opts, chromedp.UserDataDir(userDataDir))
+		}
+
+		baseCtx, _ = chromedp.NewExecAllocator(context.Background(), opts...)
 	}
 
 	var newDB bool
 
-	_, err := os.Stat(dbPath)
-	if err != nil {
+	if _, err := os.Stat(dbPath); err != nil {
 		if !os.IsNotExist(err) {
 			return nil, err
 		}
@@ -74,4 +84,16 @@ func NewScraper(logger *slog.Logger, errChan chan error) (*Scraper, error) {
 	}, nil
 }
 
-func (s *Scraper) Run() {}
+func (s *Scraper) Run() error {
+	ctx, cancel := chromedp.NewContext(s.baseCtx)
+	defer cancel()
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate("https://letterboxd.com/members/popular/page/1/"),
+		chromedp.ActionFunc(func(ctx context.Context) error { time.Sleep(time.Second * 5); return nil }),
+	); err != nil {
+		return err
+	}
+
+	return nil
+}
