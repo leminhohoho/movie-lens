@@ -4,6 +4,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 func NewLogger() (*slog.Logger, error) {
@@ -20,10 +22,10 @@ func NewLogger() (*slog.Logger, error) {
 			logFilePath = "/tmp/movie_lens.log"
 		}
 
-		var err error
-		output, err = os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return nil, err
+		output = &lumberjack.Logger{
+			Filename: logFilePath,
+			MaxSize:  500,
+			MaxAge:   30,
 		}
 	} else {
 		output = os.Stdout
