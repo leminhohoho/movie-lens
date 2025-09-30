@@ -47,11 +47,14 @@ func (a *App) Run() error {
 		"silent", os.Getenv("SILENT") == "TRUE",
 	)
 
-	if err := a.Scraper.Run(); err != nil {
-		return err
-	}
+	go a.Scraper.Run()
 
-	return nil
+	for {
+		select {
+		case err := <-a.ErrChan:
+			a.Logger.Error(err.Error())
+		}
+	}
 }
 
 func (a *App) Close() {

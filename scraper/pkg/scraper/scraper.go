@@ -3,12 +3,17 @@ package scraper
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
+	"github.com/leminhohoho/movie-lens/scraper/pkg/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -85,18 +90,11 @@ func NewScraper(logger *slog.Logger, errChan chan error) (*Scraper, error) {
 	}, nil
 }
 
-func (s *Scraper) Run() error {
+func (s *Scraper) Run() {
 	ctx, cancel := chromedp.NewContext(s.baseCtx)
 	defer cancel()
 
-	if err := s.execute(ctx,
-		chromedp.Navigate("https://letterboxd.com/members/popular/page/1/"),
-		chromedp.ActionFunc(func(ctx context.Context) error { time.Sleep(time.Second * 5); return nil }),
-	); err != nil {
-		return err
-	}
-
-	return nil
+	s.scrapeUsers(ctx)
 }
 
 func (s *Scraper) execute(ctx context.Context, tasks ...chromedp.Action) error {
@@ -120,4 +118,53 @@ func (s *Scraper) execute(ctx context.Context, tasks ...chromedp.Action) error {
 	})
 
 	return chromedp.Run(ctx, tasks...)
+}
+
+func (s *Scraper) scrapeUsers(ctx context.Context) {
+	maxPage, err := strconv.Atoi(os.Getenv("MAX_PAGE"))
+	if err != nil {
+		s.errChan <- err
+		return
+	}
+
+	for i := range maxPage {
+		var html string
+
+		if err = s.execute(ctx,
+			chromedp.Navigate(fmt.Sprintf("https://letterboxd.com/members/popular/page/%d/", i+1)),
+			chromedp.ActionFunc(func(ctx context.Context) error { time.Sleep(time.Millisecond * 1000); return nil }),
+			chromedp.OuterHTML("html", &html),
+		); err != nil {
+			s.errChan <- err
+			return
+		}
+
+		doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+		if err != nil {
+			s.errChan <- err
+			return
+		}
+
+		userRows := doc.Find("#content > div > div > section > table > tbody > tr")
+
+		userRows.Each(func(_ int, node *goquery.Selection) {
+			anchor := node.Find("td > div > h3 > a")
+			url, exists := anchor.Attr("href")
+			if !exists {
+				s.errChan <- fmt.Errorf("Attribute not exists")
+				return
+			}
+
+			user := models.User{
+				Url:  "https://letterboxd.com" + strings.TrimSpace(url),
+				Name: strings.TrimSpace(anchor.Text()),
+			}
+
+			s.logger.Info(
+				"user scraped",
+				"url", user.Url,
+				"name", user.Name,
+			)
+		})
+	}
 }
