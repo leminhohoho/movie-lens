@@ -16,6 +16,7 @@ import (
 	"github.com/leminhohoho/movie-lens/scraper/pkg/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 //go:embed setup.sql
@@ -26,6 +27,7 @@ type Scraper struct {
 	db      *gorm.DB
 	logger  *slog.Logger
 	errChan chan error
+	maxPage int
 }
 
 func NewScraper(logger *slog.Logger, errChan chan error) (*Scraper, error) {
@@ -35,6 +37,10 @@ func NewScraper(logger *slog.Logger, errChan chan error) (*Scraper, error) {
 	proxyURL := os.Getenv("PROXY_URL")
 	browserAddr := os.Getenv("BROWSER_ADDR")
 	userDataDir := os.Getenv("USER_DATA_DIR")
+	maxPage, err := strconv.Atoi(os.Getenv("MAX_PAGE"))
+	if err != nil {
+		return nil, err
+	}
 
 	if browserAddr != "" {
 		baseCtx, _ = chromedp.NewRemoteAllocator(context.Background(), browserAddr)
@@ -87,6 +93,7 @@ func NewScraper(logger *slog.Logger, errChan chan error) (*Scraper, error) {
 		db:      db,
 		logger:  logger,
 		errChan: errChan,
+		maxPage: maxPage,
 	}, nil
 }
 
@@ -94,7 +101,7 @@ func (s *Scraper) Run() {
 	ctx, cancel := chromedp.NewContext(s.baseCtx)
 	defer cancel()
 
-	s.scrapeUsers(ctx)
+	s.scrapeMembersPages(ctx)
 }
 
 func (s *Scraper) execute(ctx context.Context, tasks ...chromedp.Action) error {
@@ -120,17 +127,11 @@ func (s *Scraper) execute(ctx context.Context, tasks ...chromedp.Action) error {
 	return chromedp.Run(ctx, tasks...)
 }
 
-func (s *Scraper) scrapeUsers(ctx context.Context) {
-	maxPage, err := strconv.Atoi(os.Getenv("MAX_PAGE"))
-	if err != nil {
-		s.errChan <- err
-		return
-	}
-
-	for i := range maxPage {
+func (s *Scraper) scrapeMembersPages(ctx context.Context) {
+	for i := range s.maxPage {
 		var html string
 
-		if err = s.execute(ctx,
+		if err := s.execute(ctx,
 			chromedp.Navigate(fmt.Sprintf("https://letterboxd.com/members/popular/page/%d/", i+1)),
 			chromedp.ActionFunc(func(ctx context.Context) error { time.Sleep(time.Millisecond * 1000); return nil }),
 			chromedp.OuterHTML("html", &html),
@@ -147,8 +148,11 @@ func (s *Scraper) scrapeUsers(ctx context.Context) {
 
 		userRows := doc.Find("#content > div > div > section > table > tbody > tr")
 
-		userRows.Each(func(_ int, node *goquery.Selection) {
+		for i := range userRows.Length() {
+			node := userRows.Eq(i)
+
 			anchor := node.Find("td > div > h3 > a")
+
 			url, exists := anchor.Attr("href")
 			if !exists {
 				s.errChan <- fmt.Errorf("Attribute not exists")
@@ -165,6 +169,11 @@ func (s *Scraper) scrapeUsers(ctx context.Context) {
 				"url", user.Url,
 				"name", user.Name,
 			)
-		})
+
+			if err := s.db.Clauses(clause.OnConflict{DoNothing: true}).Table("users").Create(&user).Error; err != nil {
+				s.errChan <- err
+				return
+			}
+		}
 	}
 }

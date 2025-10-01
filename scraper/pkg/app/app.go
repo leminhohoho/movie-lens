@@ -53,6 +53,7 @@ func (a *App) Run() error {
 		select {
 		case err := <-a.ErrChan:
 			a.Logger.Error(err.Error())
+			return err
 		}
 	}
 }
