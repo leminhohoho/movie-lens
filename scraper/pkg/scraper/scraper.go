@@ -182,6 +182,10 @@ func (s *Scraper) scrapeMembersPages(ctx context.Context) {
 }
 
 func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
+	if s.db.Table("users").Where("url = ?", user.Url).Limit(1).Find(&[]models.User{}).RowsAffected > 0 {
+		return
+	}
+
 	var maxFilmsPageStr string
 	nextBtnSel := "#content > div > div > section > div.pagination > div:nth-child(2) > a"
 	lastPageSel := "#content > div > div > section > div.pagination > div.paginate-pages > ul > li:last-child > a"
