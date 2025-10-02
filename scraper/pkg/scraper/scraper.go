@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -123,6 +124,7 @@ func (s *Scraper) newTab(ctx context.Context) (context.Context, context.CancelFu
 				"response recieved",
 				"url", e.Response.URL,
 				"status_code", e.Response.Status,
+				"content_type", e.Response.MimeType,
 			)
 		}
 	})
@@ -167,16 +169,143 @@ func (s *Scraper) scrapeMembersPages(ctx context.Context) {
 				Name: strings.TrimSpace(anchor.Text()),
 			}
 
-			s.logger.Debug(
-				"user scraped",
-				"url", user.Url,
-				"name", user.Name,
-			)
+			s.logger.Debug("user scraped", "user", user)
 
 			if err := s.db.Clauses(clause.OnConflict{DoNothing: true}).Table("users").Create(&user).Error; err != nil {
 				s.errChan <- err
 				return
 			}
+
+			s.scrapeUserPage(ctx, user)
 		}
+	}
+}
+
+func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
+	var maxFilmsPageStr string
+	nextBtnSel := "#content > div > div > section > div.pagination > div:nth-child(2) > a"
+	lastPageSel := "#content > div > div > section > div.pagination > div.paginate-pages > ul > li:last-child > a"
+	lastMovieSel := "#content > div > div > section > div.poster-grid > ul > li:last-child > div > div > a > span.overlay"
+
+	if err := s.execute(ctx,
+		utils.NavigateTillTrigger(user.Url+"films/",
+			chromedp.WaitVisible(lastMovieSel),
+			utils.Delay(time.Second*2, time.Millisecond*300),
+		),
+		chromedp.Text(lastPageSel, &maxFilmsPageStr),
+	); err != nil {
+		s.errChan <- err
+		return
+	}
+
+	maxFilmsPage, err := strconv.Atoi(strings.TrimSpace(maxFilmsPageStr))
+	if err != nil {
+		s.errChan <- err
+		return
+	}
+
+	moviePageCtx, cancel := s.newTab(ctx)
+	defer cancel()
+
+	for i := 1; i <= maxFilmsPage; i++ {
+		var doc *goquery.Document
+
+		if err := s.execute(ctx,
+			chromedp.ActionFunc(func(localCtx context.Context) error {
+				if i != 1 {
+					return chromedp.Click(nextBtnSel).Do(localCtx)
+				}
+
+				return nil
+			}),
+			chromedp.WaitVisible(lastMovieSel),
+			utils.Delay(time.Second*2, time.Millisecond*300),
+			utils.ToGoqueryDoc("html", &doc),
+		); err != nil {
+			s.errChan <- err
+			return
+		}
+
+		filmNodes := doc.Find("#content > div > div > section > div.poster-grid > ul > li")
+
+		for j := range filmNodes.Length() {
+			anchor := filmNodes.Eq(j).Find("div > div > a")
+			filmUrl, exists := anchor.Attr("href")
+			if !exists {
+				s.errChan <- fmt.Errorf("film url not found")
+			}
+
+			filmUrl = "https://letterboxd.com" + filmUrl
+
+			s.scrapeMovie(moviePageCtx, filmUrl)
+		}
+	}
+}
+
+func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
+	if s.db.Table("movies").Where("url = ?", filmUrl).Limit(1).Find(&[]models.Movie{}).RowsAffected > 0 {
+		return
+	}
+
+	var doc *goquery.Document
+	var err error
+
+	if err := s.execute(ctx,
+		utils.NavigateTillTrigger(filmUrl,
+			utils.Delay(time.Second*2, time.Millisecond*300),
+			chromedp.ActionFunc(func(localCtx context.Context) error {
+				var backdropExists bool
+
+				if err := chromedp.Evaluate(`document.querySelector("#backdrop") != null`, &backdropExists).Do(localCtx); err != nil {
+					return err
+				}
+
+				if backdropExists {
+					return chromedp.WaitVisible(`#backdrop > div.backdropimage.js-backdrop-image[style]:not([style=""])`).Do(localCtx)
+				}
+
+				return nil
+			}),
+			utils.Delay(time.Second*1, time.Millisecond*300),
+		),
+		utils.ToGoqueryDoc("html", &doc),
+	); err != nil {
+		s.errChan <- err
+		return
+	}
+
+	movie := models.Movie{}
+
+	movie.Name = strings.TrimSpace(
+		doc.Find("#film-page-wrapper > div.col-17 > section.production-masthead.-shadowed.-productionscreen.-film > div > h1 > span").Text(),
+	)
+	movie.Url = filmUrl
+
+	filmFooterText := strings.TrimSpace(doc.Find("#film-page-wrapper > div.col-17 > section.section.col-10.col-main > p").Text())
+
+	movie.Duration, err = strconv.Atoi(strings.Split(filmFooterText, "\u00a0")[0])
+	if err != nil {
+		s.errChan <- err
+		return
+	}
+
+	filmPoster := doc.Find("#js-poster-col > section.poster-list.-p230.-single.no-hover.el.col > div.react-component > div > img")
+	filmPosterSrc, exists := filmPoster.Attr("src")
+	if exists {
+		movie.PosterUrl = &filmPosterSrc
+	}
+
+	filmBackdrop := doc.Find("#backdrop > div.backdropimage.js-backdrop-image")
+	filmBackdropStyle, exists := filmBackdrop.Attr("style")
+	if exists {
+		filmBackdropUrl := regexp.MustCompile(`https:\/\/a\.ltrbxd\.com.+jpg`).FindString(filmBackdropStyle)
+		movie.BackdropUrl = &filmBackdropUrl
+	}
+
+	s.logger.Debug("movie scraped", "movie", movie)
+
+	if err := s.db.Clauses(clause.OnConflict{DoNothing: true}).Table("movies").Create(&movie).Error; err != nil {
+		s.errChan <- err
+		return
 	}
 }
