@@ -98,32 +98,36 @@ func NewScraper(logger *slog.Logger, errChan chan error) (*Scraper, error) {
 }
 
 func (s *Scraper) Run() {
-	ctx, cancel := chromedp.NewContext(s.baseCtx)
+	ctx, cancel := s.initCtx(s.baseCtx)
 	defer cancel()
 
 	s.scrapeMembersPages(ctx)
 }
 
-func (s *Scraper) execute(ctx context.Context, tasks ...chromedp.Action) error {
-	chromedp.ListenTarget(ctx, func(ev any) {
+func (s *Scraper) initCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	cdpCtx, cancel := chromedp.NewContext(ctx)
+
+	go chromedp.ListenTarget(cdpCtx, func(ev any) {
 		switch e := ev.(type) {
 		case *network.EventRequestWillBeSent:
 			s.logger.Debug(
 				"request to be sent",
 				"url", e.Request.URL,
 				"method", e.Request.Method,
-				"headers", e.Request.Headers,
 			)
 		case *network.EventResponseReceived:
 			s.logger.Debug(
 				"response recieved",
 				"url", e.Response.URL,
 				"status_code", e.Response.Status,
-				"headers", e.Response.Headers,
 			)
 		}
 	})
 
+	return cdpCtx, cancel
+}
+
+func (s *Scraper) execute(ctx context.Context, tasks ...chromedp.Action) error {
 	return chromedp.Run(ctx, tasks...)
 }
 
