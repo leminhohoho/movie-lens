@@ -101,13 +101,13 @@ func NewScraper(logger *slog.Logger, errChan chan error) (*Scraper, error) {
 }
 
 func (s *Scraper) Run() {
-	ctx, cancel := s.initCtx(s.baseCtx)
+	ctx, cancel := s.newTab(s.baseCtx)
 	defer cancel()
 
 	s.scrapeMembersPages(ctx)
 }
 
-func (s *Scraper) initCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+func (s *Scraper) newTab(ctx context.Context) (context.Context, context.CancelFunc) {
 	cdpCtx, cancel := chromedp.NewContext(ctx)
 
 	go chromedp.ListenTarget(cdpCtx, func(ev any) {
