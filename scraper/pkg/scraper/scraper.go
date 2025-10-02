@@ -14,6 +14,7 @@ import (
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"github.com/leminhohoho/movie-lens/scraper/pkg/models"
+	"github.com/leminhohoho/movie-lens/scraper/pkg/utils"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -133,19 +134,15 @@ func (s *Scraper) execute(ctx context.Context, tasks ...chromedp.Action) error {
 
 func (s *Scraper) scrapeMembersPages(ctx context.Context) {
 	for i := range s.maxPage {
-		var html string
+		var doc *goquery.Document
 
 		if err := s.execute(ctx,
-			chromedp.Navigate(fmt.Sprintf("https://letterboxd.com/members/popular/page/%d/", i+1)),
-			chromedp.ActionFunc(func(ctx context.Context) error { time.Sleep(time.Millisecond * 1000); return nil }),
-			chromedp.OuterHTML("html", &html),
+			utils.NavigateTillTrigger(fmt.Sprintf("https://letterboxd.com/members/popular/page/%d/", i+1),
+				chromedp.WaitVisible("#content > div > div > section > table > tbody > tr:last-child"),
+				utils.Delay(time.Second*2, time.Millisecond*300),
+			),
+			utils.ToGoqueryDoc("html", &doc),
 		); err != nil {
-			s.errChan <- err
-			return
-		}
-
-		doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
-		if err != nil {
 			s.errChan <- err
 			return
 		}
@@ -168,7 +165,7 @@ func (s *Scraper) scrapeMembersPages(ctx context.Context) {
 				Name: strings.TrimSpace(anchor.Text()),
 			}
 
-			s.logger.Info(
+			s.logger.Debug(
 				"user scraped",
 				"url", user.Url,
 				"name", user.Name,
