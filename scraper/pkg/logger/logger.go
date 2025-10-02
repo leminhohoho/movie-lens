@@ -23,9 +23,12 @@ func NewLogger() (*slog.Logger, error) {
 		}
 
 		output = &lumberjack.Logger{
-			Filename: logFilePath,
-			MaxSize:  500,
-			MaxAge:   30,
+			Filename:   logFilePath,
+			MaxSize:    500,
+			MaxAge:     30,
+			MaxBackups: 3,
+			Compress:   true,
+			LocalTime:  true,
 		}
 	} else {
 		output = os.Stdout
