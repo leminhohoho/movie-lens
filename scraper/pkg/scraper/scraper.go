@@ -62,6 +62,8 @@ func NewScraper(logger *slog.Logger, errChan chan error) (*Scraper, error) {
 		baseCtx, _ = chromedp.NewExecAllocator(context.Background(), opts...)
 	}
 
+	baseCtx, _ = chromedp.NewContext(baseCtx)
+
 	var newDB bool
 
 	if _, err := os.Stat(dbPath); err != nil {
