@@ -116,8 +116,8 @@ CREATE TABLE languages_and_movies (
 );
 
 
-DROP TABLE IF EXISTS user_and_movies;
-CREATE TABLE user_and_movies (
+DROP TABLE IF EXISTS users_and_movies;
+CREATE TABLE users_and_movies (
     user_id INTEGER NOT NULL,
     movie_id INTEGER NOT NULL,
     watch_date TEXT NOT NULL,
