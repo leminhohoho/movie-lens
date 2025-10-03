@@ -308,4 +308,39 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 		s.errChan <- err
 		return
 	}
+
+	castNodes := doc.Find(`#tab-cast > div > p > a:not([id="has-cast-overflow"])`)
+	hiddenCastNodes := doc.Find(`#tab-cast > div > p > span#cast-overflow > a`)
+
+	castNodes = castNodes.AddSelection(hiddenCastNodes)
+
+	for i := range castNodes.Length() {
+		var cast models.Cast
+
+		castNode := castNodes.Eq(i)
+		castUrl, exists := castNode.Attr("href")
+
+		if !exists {
+			s.errChan <- fmt.Errorf("No cast url found for this actor/actress")
+		}
+
+		castUrl = "https://letterboxd.com" + castUrl
+
+		if s.db.Table("casts").Where("url = ?", castUrl).Limit(1).Find(&[]models.Cast{}).RowsAffected == 0 {
+			cast.Name = castNode.Text()
+			cast.Url = castUrl
+
+			if err := s.db.Table("casts").Create(&cast).Error; err != nil {
+				s.errChan <- err
+				return
+			}
+
+			s.logger.Debug("cast scraped", "cast", cast)
+		} else {
+			if err := s.db.Table("casts").Where("url = ?").Limit(1).First(&cast).Error; err != nil {
+				s.errChan <- err
+				return
+			}
+		}
+	}
 }
