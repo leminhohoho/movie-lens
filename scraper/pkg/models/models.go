@@ -17,10 +17,11 @@ type Movie struct {
 	BackdropUrl *string
 }
 
-type Cast struct {
+type Crew struct {
 	Id   int
 	Url  string
 	Name string
+	Role string
 }
 
 type UsersAndMovies struct {
