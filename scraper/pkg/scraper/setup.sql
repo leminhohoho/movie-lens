@@ -17,35 +17,19 @@ CREATE TABLE movies (
 );
 
 
-DROP TABLE IF EXISTS casts;
-CREATE TABLE casts (
-    id INTEGER PRIMARY KEY,
-    url TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL
-);
-
-
-DROP TABLE IF EXISTS casts_and_movies;
-CREATE TABLE casts_and_movies (
-    cast_id INTEGER NOT NULL,
-    movie_id INTEGER NOT NULL,
-    cast_importance INTEGER NOT NULL
-);
-
-
 DROP TABLE IF EXISTS crews;
 CREATE TABLE crews (
     id INTEGER PRIMARY KEY,
     url TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    role TEXT NOT NULL
 );
 
 
 DROP TABLE IF EXISTS crews_and_movies;
 CREATE TABLE crews_and_movies (
     crew_id INTEGER NOT NULL,
-    movie_id INTEGER NOT NULL,
-    role TEXT NOT NULL
+    movie_id INTEGER NOT NULL
 );
 
 
