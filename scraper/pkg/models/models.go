@@ -14,3 +14,9 @@ type Movie struct {
 	PosterUrl   *string
 	BackdropUrl *string
 }
+
+type Cast struct {
+	Id   int
+	Url  string
+	Name string
+}
