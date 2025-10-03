@@ -12,7 +12,7 @@ type Movie struct {
 	Id          int
 	Url         string
 	Name        string
-	Duration    int
+	Duration    *int
 	PosterUrl   *string
 	BackdropUrl *string
 }
