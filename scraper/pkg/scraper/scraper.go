@@ -315,7 +315,7 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 	castNodes = castNodes.AddSelection(hiddenCastNodes)
 
 	for i := range castNodes.Length() {
-		var cast models.Cast
+		var actor models.Crew
 
 		castNode := castNodes.Eq(i)
 		castUrl, exists := castNode.Attr("href")
@@ -326,18 +326,19 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 
 		castUrl = "https://letterboxd.com" + castUrl
 
-		if s.db.Table("casts").Where("url = ?", castUrl).Limit(1).Find(&[]models.Cast{}).RowsAffected == 0 {
-			cast.Name = castNode.Text()
-			cast.Url = castUrl
+		if s.db.Table("crews").Where("url = ?", castUrl).Limit(1).Find(&[]models.Crew{}).RowsAffected == 0 {
+			actor.Name = castNode.Text()
+			actor.Url = castUrl
+			actor.Role = "actor"
 
-			if err := s.db.Table("casts").Create(&cast).Error; err != nil {
+			if err := s.db.Table("crews").Create(&actor).Error; err != nil {
 				s.errChan <- err
 				return
 			}
 
-			s.logger.Debug("cast scraped", "cast", cast)
+			s.logger.Debug("cast scraped", "cast", actor)
 		} else {
-			if err := s.db.Table("casts").Where("url = ?").Limit(1).First(&cast).Error; err != nil {
+			if err := s.db.Table("crews").Where("url = ?").Limit(1).First(&actor).Error; err != nil {
 				s.errChan <- err
 				return
 			}
