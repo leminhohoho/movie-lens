@@ -31,3 +31,15 @@ type UsersAndMovies struct {
 	IsLoved   bool
 	Review    *string
 }
+
+type Genre struct {
+	Id   int
+	Url  string
+	Name string
+}
+
+type Theme struct {
+	Id   int
+	Url  string
+	Name string
+}
