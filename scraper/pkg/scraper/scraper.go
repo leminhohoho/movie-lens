@@ -169,12 +169,12 @@ func (s *Scraper) scrapeMembersPages(ctx context.Context) {
 				Name: strings.TrimSpace(anchor.Text()),
 			}
 
-			s.logger.Debug("user scraped", "user", user)
-
 			if err := s.db.Clauses(clause.OnConflict{DoNothing: true}).Table("users").Create(&user).Error; err != nil {
 				s.errChan <- err
 				return
 			}
+
+			s.logger.Debug("user scraped", "user", user)
 
 			s.scrapeUserPage(ctx, user)
 		}
@@ -243,6 +243,8 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
 }
 
 func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
+	// ---------------- SCRAPE MOVIE ----------------- //
+
 	if s.db.Table("movies").Where("url = ?", filmUrl).Limit(1).Find(&[]models.Movie{}).RowsAffected > 0 {
 		return
 	}
@@ -261,7 +263,10 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 				}
 
 				if backdropExists {
-					return chromedp.WaitVisible(`#backdrop > div.backdropimage.js-backdrop-image[style]:not([style=""])`).Do(localCtx)
+					return chromedp.Tasks{
+						chromedp.WaitVisible(`body.backdrop-loaded`),
+						chromedp.WaitVisible(`#js-poster-col > section.poster-list.-p230.-single.no-hover.el.col > div.react-component > div > img[srcset]`),
+					}.Do(ctx)
 				}
 
 				return nil
@@ -283,10 +288,11 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 
 	filmFooterText := strings.TrimSpace(doc.Find("#film-page-wrapper > div.col-17 > section.section.col-10.col-main > p").Text())
 
-	movie.Duration, err = strconv.Atoi(strings.Split(filmFooterText, "\u00a0")[0])
+	duration, err := strconv.Atoi(strings.Split(filmFooterText, "\u00a0")[0])
 	if err != nil {
-		s.errChan <- err
-		return
+		s.logger.Warn("unable to locate movie duration from %s", "footer", filmFooterText)
+	} else {
+		movie.Duration = &duration
 	}
 
 	filmPoster := doc.Find("#js-poster-col > section.poster-list.-p230.-single.no-hover.el.col > div.react-component > div > img")
@@ -302,12 +308,14 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 		movie.BackdropUrl = &filmBackdropUrl
 	}
 
-	s.logger.Debug("movie scraped", "movie", movie)
-
 	if err := s.db.Clauses(clause.OnConflict{DoNothing: true}).Table("movies").Create(&movie).Error; err != nil {
 		s.errChan <- err
 		return
 	}
+
+	s.logger.Debug("movie scraped", "movie", movie)
+
+	// ---------------- SCRAPE CASTS ----------------- //
 
 	castNodes := doc.Find(`#tab-cast > div > p > a:not([id="has-cast-overflow"])`)
 	hiddenCastNodes := doc.Find(`#tab-cast > div > p > span#cast-overflow > a`)
@@ -338,10 +346,72 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 
 			s.logger.Debug("cast scraped", "cast", actor)
 		} else {
-			if err := s.db.Table("crews").Where("url = ?").Limit(1).First(&actor).Error; err != nil {
+			if err := s.db.Table("crews").Where("url = ?", castUrl).Limit(1).First(&actor).Error; err != nil {
 				s.errChan <- err
 				return
 			}
 		}
 	}
+
+	// ---------------- SCRAPE GENRES & THEMES ----------------- //
+
+	categoryLabels := doc.Find("#tab-genres > h3")
+
+	for i := range categoryLabels.Length() {
+		categoryLabel := categoryLabels.Eq(i)
+		categoryLabelText := strings.TrimSpace(categoryLabel.Text())
+
+		switch categoryLabelText {
+		case "Genres":
+			genreNodes := categoryLabel.Next().Find("p > a")
+			for j := range genreNodes.Length() {
+				genreNode := genreNodes.Eq(j)
+
+				genreName := strings.TrimSpace(genreNode.Text())
+				genreUrl, exists := genreNode.Attr("href")
+				if !exists {
+					s.errChan <- fmt.Errorf("Genre url not found")
+					return
+				}
+
+				genre := models.Genre{Name: genreName, Url: genreUrl}
+
+				if err := s.db.Clauses(clause.OnConflict{
+					Columns:   []clause.Column{{Name: "url"}},
+					DoUpdates: clause.Assignments(map[string]interface{}{"url": gorm.Expr("excluded.url")}),
+				}).Table("genres").Create(&genre).Error; err != nil {
+					s.errChan <- err
+					return
+				}
+
+				s.logger.Debug("genre scraped", "genre", genre)
+			}
+		case "Themes":
+			themeNodes := categoryLabel.Next().Find("p > a:not([href^='/film/'])")
+			for j := range themeNodes.Length() {
+				themeNode := themeNodes.Eq(j)
+
+				themeName := strings.TrimSpace(themeNode.Text())
+				themeUrl, exists := themeNode.Attr("href")
+				if !exists {
+					s.errChan <- fmt.Errorf("Genre url not found")
+					return
+				}
+
+				theme := models.Theme{Name: themeName, Url: themeUrl}
+
+				if err := s.db.Clauses(clause.OnConflict{
+					Columns:   []clause.Column{{Name: "url"}},
+					DoUpdates: clause.Assignments(map[string]interface{}{"url": gorm.Expr("excluded.url")}),
+				}).Table("themes").Create(&theme).Error; err != nil {
+					s.errChan <- err
+					return
+				}
+
+				s.logger.Debug("theme scraped", "theme", theme)
+			}
+		}
+	}
+
+	// ---------------- SCRAPE CREWS ----------------- //
 }
