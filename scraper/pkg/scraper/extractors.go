@@ -3,6 +3,9 @@ package scraper
 import (
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/leminhohoho/movie-lens/scraper/pkg/models"
@@ -42,7 +45,7 @@ func ExtractUsers(doc *goquery.Selection, logger *slog.Logger) ([]models.User, e
 	return users, nil
 }
 
-// ExtractMovieUrls get all users information from the user's film page at https://letterboxd.com/[user_name]/films/.
+// ExtractMovieUrls get all movie urls from the user's film page at https://letterboxd.com/[user_name]/films/.
 // It return a list of movie urls and error if the extracting process fails.
 func ExtractMovieUrls(doc *goquery.Selection, logger *slog.Logger) ([]string, error) {
 	urls := []string{}
