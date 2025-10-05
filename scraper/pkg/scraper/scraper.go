@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -166,7 +165,7 @@ func (s *Scraper) scrapeMembersPages(ctx context.Context) {
 					return
 				}
 
-				s.logger.Info("new user scraped", "user", user)
+				s.logger.Info("new user added to db", "user", user)
 			}
 
 			s.scrapeUserPage(ctx, user)
@@ -197,9 +196,6 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
 		return
 	}
 
-	moviePageCtx, cancel := s.newTab(ctx)
-	defer cancel()
-
 	for i := 1; i <= maxFilmsPage; i++ {
 		var doc *goquery.Document
 
@@ -219,18 +215,16 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
 			return
 		}
 
-		filmNodes := doc.Find("#content > div > div > section > div.poster-grid > ul > li")
+		filmUrls, err := ExtractMovieUrls(doc.Selection, s.logger)
+		if err != nil {
+			s.errChan <- err
+			return
+		}
 
-		for j := range filmNodes.Length() {
-			anchor := filmNodes.Eq(j).Find("div > div > a")
-			filmUrl, exists := anchor.Attr("href")
-			if !exists {
-				s.errChan <- fmt.Errorf("film url not found")
-			}
-
-			filmUrl = "https://letterboxd.com" + filmUrl
-
+		for _, filmUrl := range filmUrls {
+			moviePageCtx, cancel := s.newTab(ctx)
 			s.scrapeMovie(moviePageCtx, filmUrl)
+			cancel()
 		}
 	}
 }
