@@ -151,7 +151,7 @@ func (s *Scraper) scrapeMembersPages(ctx context.Context) {
 			return
 		}
 
-		users, err := ExtractUser(doc.Selection, s.logger)
+		users, err := ExtractUsers(doc.Selection, s.logger)
 		if err != nil {
 			s.errChan <- err
 			return
