@@ -151,30 +151,23 @@ func (s *Scraper) scrapeMembersPages(ctx context.Context) {
 			return
 		}
 
-		userRows := doc.Find("#content > div > div > section > table > tbody > tr")
+		users, err := ExtractUser(doc.Selection, s.logger)
+		if err != nil {
+			s.errChan <- err
+			return
+		}
 
-		for i := range userRows.Length() {
-			node := userRows.Eq(i)
+		for _, user := range users {
+			if s.db.Table("users").Where("url = ?", user.Url).Find(&[]models.Movie{}).RowsAffected > 0 {
+				s.logger.Warn("user is already in the database", "user", user)
+			} else {
+				if err := s.db.Table("users").Create(&user).Error; err != nil {
+					s.errChan <- err
+					return
+				}
 
-			anchor := node.Find("td > div > h3 > a")
-
-			url, exists := anchor.Attr("href")
-			if !exists {
-				s.errChan <- fmt.Errorf("Attribute not exists")
-				return
+				s.logger.Info("new user scraped", "user", user)
 			}
-
-			user := models.User{
-				Url:  "https://letterboxd.com" + strings.TrimSpace(url),
-				Name: strings.TrimSpace(anchor.Text()),
-			}
-
-			if err := s.db.Clauses(clause.OnConflict{DoNothing: true}).Table("users").Create(&user).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Debug("user scraped", "user", user)
 
 			s.scrapeUserPage(ctx, user)
 		}
