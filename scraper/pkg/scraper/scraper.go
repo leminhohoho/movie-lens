@@ -384,6 +384,8 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 					return
 				}
 
+				genreUrl = "https://letterboxd.com" + genreUrl
+
 				s.logger.Debug("genre scraped", "genre", genre)
 			}
 		case "Themes":
@@ -397,6 +399,8 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 					s.errChan <- fmt.Errorf("Genre url not found")
 					return
 				}
+
+				themeUrl = "https://letterboxd.com" + themeUrl
 
 				theme := models.Theme{Name: themeName, Url: themeUrl}
 
