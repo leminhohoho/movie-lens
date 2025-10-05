@@ -11,7 +11,7 @@ CREATE TABLE movies (
     id INTEGER PRIMARY KEY,
     url TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
-    duration INT NOT NULL,
+    duration INT,
     poster_url TEXT,
     backdrop_url TEXT
 );
