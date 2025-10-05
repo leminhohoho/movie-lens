@@ -233,11 +233,11 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 	// ---------------- SCRAPE MOVIE ----------------- //
 
 	if s.db.Table("movies").Where("url = ?", filmUrl).Limit(1).Find(&[]models.Movie{}).RowsAffected > 0 {
+		s.logger.Warn("movie is already in the database", "url", filmUrl)
 		return
 	}
 
 	var doc *goquery.Document
-	var err error
 
 	if err := s.execute(ctx,
 		utils.NavigateTillTrigger(filmUrl,
@@ -266,41 +266,18 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 		return
 	}
 
-	movie := models.Movie{}
-
-	movie.Name = strings.TrimSpace(
-		doc.Find("#film-page-wrapper > div.col-17 > section.production-masthead.-shadowed.-productionscreen.-film > div > h1 > span").Text(),
-	)
-	movie.Url = filmUrl
-
-	filmFooterText := strings.TrimSpace(doc.Find("#film-page-wrapper > div.col-17 > section.section.col-10.col-main > p").Text())
-
-	duration, err := strconv.Atoi(strings.Split(filmFooterText, "\u00a0")[0])
+	movie, err := ExtractMovie(filmUrl, doc.Selection, s.logger)
 	if err != nil {
-		s.logger.Warn("unable to locate movie duration from %s", "footer", filmFooterText)
-	} else {
-		movie.Duration = &duration
-	}
-
-	filmPoster := doc.Find("#js-poster-col > section.poster-list.-p230.-single.no-hover.el.col > div.react-component > div > img")
-	filmPosterSrc, exists := filmPoster.Attr("src")
-	if exists {
-		movie.PosterUrl = &filmPosterSrc
-	}
-
-	filmBackdrop := doc.Find("#backdrop > div.backdropimage.js-backdrop-image")
-	filmBackdropStyle, exists := filmBackdrop.Attr("style")
-	if exists {
-		filmBackdropUrl := regexp.MustCompile(`https:\/\/a\.ltrbxd\.com.+jpg`).FindString(filmBackdropStyle)
-		movie.BackdropUrl = &filmBackdropUrl
-	}
-
-	if err := s.db.Clauses(clause.OnConflict{DoNothing: true}).Table("movies").Create(&movie).Error; err != nil {
 		s.errChan <- err
 		return
 	}
 
-	s.logger.Debug("movie scraped", "movie", movie)
+	if err := s.db.Table("movies").Create(&movie).Error; err != nil {
+		s.errChan <- err
+		return
+	}
+
+	s.logger.Info("new movie added to db", "movie", movie)
 
 	// ---------------- SCRAPE CASTS ----------------- //
 
@@ -434,6 +411,5 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 
 			s.logger.Debug("crew scraped", "crew", crew)
 		}
-
 	}
 }
