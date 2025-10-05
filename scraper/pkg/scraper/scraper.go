@@ -158,6 +158,11 @@ func (s *Scraper) scrapeMembersPages(ctx context.Context) {
 
 		for _, user := range users {
 			if s.db.Table("users").Where("url = ?", user.Url).Find(&[]models.Movie{}).RowsAffected > 0 {
+				if err := s.db.Table("users").Where("url = ?", user.Url).First(&user).Error; err != nil {
+					s.errChan <- err
+					return
+				}
+
 				s.logger.Warn("user is already in the database", "user", user)
 			} else {
 				if err := s.db.Table("users").Create(&user).Error; err != nil {
@@ -230,13 +235,6 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
 }
 
 func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
-	// ---------------- SCRAPE MOVIE ----------------- //
-
-	if s.db.Table("movies").Where("url = ?", filmUrl).Limit(1).Find(&[]models.Movie{}).RowsAffected > 0 {
-		s.logger.Warn("movie is already in the database", "url", filmUrl)
-		return
-	}
-
 	var doc *goquery.Document
 
 	if err := s.execute(ctx,
@@ -266,54 +264,53 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 		return
 	}
 
+	// ---------------- SCRAPE MOVIE ----------------- //
+
 	movie, err := ExtractMovie(filmUrl, doc.Selection, s.logger)
 	if err != nil {
 		s.errChan <- err
 		return
 	}
 
-	if err := s.db.Table("movies").Create(&movie).Error; err != nil {
+	if s.db.Table("movies").Where("url = ?", movie.Url).Find(&[]models.Crew{}).RowsAffected > 0 {
+		if err := s.db.Table("movies").Where("url = ?", movie.Url).First(&movie).Error; err != nil {
+			s.errChan <- err
+			return
+		}
+
+		s.logger.Warn("movie already in the database", "movie", movie)
+	} else {
+		if err := s.db.Table("movies").Create(&movie).Error; err != nil {
+			s.errChan <- err
+			return
+		}
+
+		s.logger.Info("new movie added to db", "movie", movie)
+	}
+
+	// ---------------- SCRAPE CASTS ----------------- //
+
+	casts, err := ExtractCasts(doc.Selection, s.logger)
+	if err != nil {
 		s.errChan <- err
 		return
 	}
 
-	s.logger.Info("new movie added to db", "movie", movie)
-
-	// ---------------- SCRAPE CASTS ----------------- //
-
-	castNodes := doc.Find(`#tab-cast > div > p > a:not([id="has-cast-overflow"])`)
-	hiddenCastNodes := doc.Find(`#tab-cast > div > p > span#cast-overflow > a`)
-
-	castNodes = castNodes.AddSelection(hiddenCastNodes)
-
-	for i := range castNodes.Length() {
-		var actor models.Crew
-
-		castNode := castNodes.Eq(i)
-		castUrl, exists := castNode.Attr("href")
-
-		if !exists {
-			s.errChan <- fmt.Errorf("No cast url found for this actor/actress")
-		}
-
-		castUrl = "https://letterboxd.com" + castUrl
-
-		if s.db.Table("crews").Where("url = ?", castUrl).Limit(1).Find(&[]models.Crew{}).RowsAffected == 0 {
-			actor.Name = castNode.Text()
-			actor.Url = castUrl
-			actor.Role = "actor"
-
-			if err := s.db.Table("crews").Create(&actor).Error; err != nil {
+	for _, cast := range casts {
+		if s.db.Table("crews").Where("url = ?", cast.Url).Find(&[]models.Crew{}).RowsAffected > 0 {
+			if err := s.db.Table("crews").Where("url = ?", cast.Url).First(&cast).Error; err != nil {
 				s.errChan <- err
 				return
 			}
 
-			s.logger.Debug("cast scraped", "cast", actor)
+			s.logger.Warn("cast already in the database", "cast", cast)
 		} else {
-			if err := s.db.Table("crews").Where("url = ?", castUrl).Limit(1).First(&actor).Error; err != nil {
+			if err := s.db.Table("crews").Create(&cast).Error; err != nil {
 				s.errChan <- err
 				return
 			}
+
+			s.logger.Debug("new cast added to db", "cast", cast)
 		}
 	}
 
