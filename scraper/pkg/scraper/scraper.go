@@ -266,7 +266,7 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 					return chromedp.Tasks{
 						chromedp.WaitVisible(`body.backdrop-loaded`),
 						chromedp.WaitVisible(`#js-poster-col > section.poster-list.-p230.-single.no-hover.el.col > div.react-component > div > img[srcset]`),
-					}.Do(ctx)
+					}.Do(localCtx)
 				}
 
 				return nil
