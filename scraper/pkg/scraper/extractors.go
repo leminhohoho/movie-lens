@@ -8,9 +8,9 @@ import (
 	"github.com/leminhohoho/movie-lens/scraper/pkg/models"
 )
 
-// ExtractUser get all users information from the member page at https://letterboxd.com/members/popular.
+// ExtractUsers get all users information from the member page at https://letterboxd.com/members/popular/.
 // It return a list of users and error if the extracting process fails.
-func ExtractUser(doc *goquery.Selection, logger *slog.Logger) ([]models.User, error) {
+func ExtractUsers(doc *goquery.Selection, logger *slog.Logger) ([]models.User, error) {
 	users := []models.User{}
 
 	userRows := doc.Find("#content > div > div > section > table > tbody > tr")
@@ -40,4 +40,28 @@ func ExtractUser(doc *goquery.Selection, logger *slog.Logger) ([]models.User, er
 	}
 
 	return users, nil
+}
+
+// ExtractMovieUrls get all users information from the user's film page at https://letterboxd.com/[user_name]/films/.
+// It return a list of movie urls and error if the extracting process fails.
+func ExtractMovieUrls(doc *goquery.Selection, logger *slog.Logger) ([]string, error) {
+	urls := []string{}
+
+	filmNodes := doc.Find("#content > div > div > section > div.poster-grid > ul > li")
+
+	for i := range filmNodes.Length() {
+		anchor := filmNodes.Eq(i).Find("div > div > a")
+		url, exists := anchor.Attr("href")
+		if !exists {
+			return nil, fmt.Errorf("film url not found")
+		}
+
+		url = "https://letterboxd.com" + url
+
+		urls = append(urls, url)
+
+		logger.Debug("movie url extracted", "url", url)
+	}
+
+	return urls, nil
 }
