@@ -418,4 +418,35 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 	}
 
 	// ---------------- SCRAPE CREWS ----------------- //
+
+	crewLabels := doc.Find("#tab-crew > h3")
+
+	for i := range crewLabels.Length() {
+		role := strings.TrimSpace(crewLabels.Eq(i).Find("span:first-child").Text())
+		crewAnchors := crewLabels.Eq(i).Next().Find("p > a")
+
+		for j := range crewAnchors.Length() {
+			crewName := strings.TrimSpace(crewAnchors.Eq(j).Text())
+			crewUrl, exists := crewAnchors.Eq(j).Attr("href")
+			if !exists {
+				s.errChan <- fmt.Errorf("crew url not found")
+				return
+			}
+
+			crewUrl = "https://letterboxd.com" + crewUrl
+
+			crew := models.Crew{Name: crewName, Url: crewUrl, Role: role}
+
+			if err := s.db.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "url"}},
+				DoUpdates: clause.Assignments(map[string]interface{}{"url": gorm.Expr("excluded.url")}),
+			}).Table("crews").Create(&crew).Error; err != nil {
+				s.errChan <- err
+				return
+			}
+
+			s.logger.Debug("crew scraped", "crew", crew)
+		}
+
+	}
 }
