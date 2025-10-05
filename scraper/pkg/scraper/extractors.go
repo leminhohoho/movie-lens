@@ -68,3 +68,52 @@ func ExtractMovieUrls(doc *goquery.Selection, logger *slog.Logger) ([]string, er
 
 	return urls, nil
 }
+
+// ExtractMovie get all movie information from the movie page at https://letterboxd.com/film/[movie_name].
+// It return a list of movie urls and error if the extracting process fails.
+func ExtractMovie(filmUrl string, doc *goquery.Selection, logger *slog.Logger) (models.Movie, error) {
+	movie := models.Movie{Url: filmUrl}
+
+	movie.Name = strings.TrimSpace(doc.Find(
+		"#film-page-wrapper > div.col-17 > section.production-masthead.-shadowed.-productionscreen.-film > div > h1 > span").Text(),
+	)
+	if movie.Name == "" {
+		return movie, fmt.Errorf("movie name can't be empty")
+	}
+
+	logger.Debug("movie name extracted", "url", movie.Url, "name", movie.Name)
+
+	filmFooterText := strings.TrimSpace(doc.Find("#film-page-wrapper > div.col-17 > section.section.col-10.col-main > p").Text())
+
+	duration, err := strconv.Atoi(strings.Split(filmFooterText, "\u00a0")[0])
+	if err != nil {
+		logger.Warn("unable to locate movie duration from %s", "footer", filmFooterText)
+	} else {
+		movie.Duration = &duration
+
+		logger.Debug("movie duration extracted", "url", movie.Url, "duration", *movie.Duration)
+	}
+
+	filmPoster := doc.Find("#js-poster-col > section.poster-list.-p230.-single.no-hover.el.col > div.react-component > div > img")
+	filmPosterUrl, exists := filmPoster.Attr("src")
+	if exists {
+		movie.PosterUrl = &filmPosterUrl
+	} else {
+		logger.Warn("movie does not have poster", "url", movie.Url)
+	}
+
+	logger.Debug("movie poster extracted", "url", movie.Url, "poster_url", *movie.PosterUrl)
+
+	filmBackdrop := doc.Find("#backdrop > div.backdropimage.js-backdrop-image")
+	filmBackdropStyle, exists := filmBackdrop.Attr("style")
+	if exists {
+		filmBackdropUrl := regexp.MustCompile(`https:\/\/a\.ltrbxd\.com.+jpg`).FindString(filmBackdropStyle)
+		movie.BackdropUrl = &filmBackdropUrl
+
+		logger.Debug("movie backdrop extracted", "url", movie.Url, "backdrop_url", *movie.BackdropUrl)
+	} else {
+		logger.Warn("movie does not have backdrop", "url", movie.Url)
+	}
+
+	return movie, nil
+}
