@@ -12,7 +12,7 @@ import (
 )
 
 // ExtractUsers get all users information from the member page at https://letterboxd.com/members/popular/.
-// It return a list of users and error if the extracting process fails.
+// It return a list of [models.User] and error if the extracting process fails.
 func ExtractUsers(doc *goquery.Selection, logger *slog.Logger) ([]models.User, error) {
 	users := []models.User{}
 
@@ -70,7 +70,7 @@ func ExtractMovieUrls(doc *goquery.Selection, logger *slog.Logger) ([]string, er
 }
 
 // ExtractMovie get all movie information from the movie page at https://letterboxd.com/film/[movie_name].
-// It return a list of movie urls and error if the extracting process fails.
+// It return [models.Movie] and error if the extracting process fails.
 func ExtractMovie(filmUrl string, doc *goquery.Selection, logger *slog.Logger) (models.Movie, error) {
 	movie := models.Movie{Url: filmUrl}
 
@@ -116,4 +116,36 @@ func ExtractMovie(filmUrl string, doc *goquery.Selection, logger *slog.Logger) (
 	}
 
 	return movie, nil
+}
+
+// ExtractCasts get all cast information from the movie page at https://letterboxd.com/film/[movie_name].
+// It return a list of [models.Crew] and error if extracting process fails.
+func ExtractCasts(doc *goquery.Selection, logger *slog.Logger) ([]models.Crew, error) {
+	casts := []models.Crew{}
+
+	castNodes := doc.Find(`#tab-cast > div > p > a:not([id="has-cast-overflow"])`)
+	hiddenCastNodes := doc.Find(`#tab-cast > div > p > span#cast-overflow > a`)
+
+	castNodes = castNodes.AddSelection(hiddenCastNodes)
+
+	for i := range castNodes.Length() {
+		var cast models.Crew
+
+		castNode := castNodes.Eq(i)
+		castUrl, exists := castNode.Attr("href")
+		if !exists {
+			return nil, fmt.Errorf("No cast url found for this actor/actress")
+		}
+		logger.Debug("cast url extracted", "url", castUrl)
+
+		cast.Name = castNode.Text()
+		logger.Debug("cast name extracted", "name", cast.Name)
+
+		cast.Url = "https://letterboxd.com" + castUrl
+		cast.Role = "Actor"
+
+		casts = append(casts, cast)
+	}
+
+	return casts, nil
 }
