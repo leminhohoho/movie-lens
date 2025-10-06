@@ -439,4 +439,34 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 			s.logger.Info("new country added to db", "country", country)
 		}
 	}
+
+	// ---------------- SCRAPE LANGUAGES ----------------- //
+
+	languages, err := ExtractLanguages(movie.Id, doc.Selection, s.logger)
+	if err != nil {
+		s.errChan <- err
+		return
+	}
+
+	for i, language := range languages {
+		if s.db.Table("languages_and_movies").
+			Where("movie_id = ? AND language = ? AND is_primary = ?", language.MovieId, language.Language, language.IsPrimary).
+			Find(&[]models.LanguagesAndMovies{}).RowsAffected > 0 {
+			if err := s.db.Table("languages_and_movies").
+				Where("movie_id = ? AND language = ? AND is_primary = ?", language.MovieId, language.Language, language.IsPrimary).
+				First(&languages[i]).Error; err != nil {
+				s.errChan <- err
+				return
+			}
+
+			s.logger.Warn("language is already in the database", "language", language)
+		} else {
+			if err := s.db.Table("languages_and_movies").Create(&language).Error; err != nil {
+				s.errChan <- err
+				return
+			}
+
+			s.logger.Info("new language added to db", "language", language)
+		}
+	}
 }
