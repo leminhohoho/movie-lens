@@ -167,6 +167,10 @@ func ExtractGenresAndThemes(doc *goquery.Selection, logger *slog.Logger) ([]mode
 				genreNode := genreNodes.Eq(j)
 
 				genreName := strings.TrimSpace(genreNode.Text())
+				if genreName == "" {
+					return nil, nil, fmt.Errorf("genre name can't be empty")
+				}
+
 				genreUrl, exists := genreNode.Attr("href")
 				if !exists {
 					return nil, nil, fmt.Errorf("Genre url not found")
@@ -182,6 +186,10 @@ func ExtractGenresAndThemes(doc *goquery.Selection, logger *slog.Logger) ([]mode
 				themeNode := themeNodes.Eq(j)
 
 				themeName := strings.TrimSpace(themeNode.Text())
+				if themeName == "" {
+					return nil, nil, fmt.Errorf("theme name can't be empty")
+				}
+
 				themeUrl, exists := themeNode.Attr("href")
 				if !exists {
 					return nil, nil, fmt.Errorf("Genre url not found")
@@ -208,6 +216,10 @@ func ExtractCrews(doc *goquery.Selection, logger *slog.Logger) ([]models.Crew, e
 
 		for j := range crewAnchors.Length() {
 			crewName := strings.TrimSpace(crewAnchors.Eq(j).Text())
+			if crewName == "" {
+				return nil, fmt.Errorf("crew name can't be empty")
+			}
+
 			crewUrl, exists := crewAnchors.Eq(j).Attr("href")
 			if !exists {
 				return nil, fmt.Errorf("crew url not found")
