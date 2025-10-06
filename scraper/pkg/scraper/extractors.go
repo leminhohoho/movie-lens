@@ -338,3 +338,42 @@ func ExtractLanguages(movieId int, doc *goquery.Selection, logger *slog.Logger) 
 
 	return languages, nil
 }
+
+func ExtractReleases(movieId int, doc *goquery.Selection, logger *slog.Logger) ([]models.Release, error) {
+	releases := []models.Release{}
+
+	releaseLabels := doc.Find("#tab-releases > section > h3")
+
+	for i := range releaseLabels.Length() {
+		releaseLabelText := strings.TrimSpace(releaseLabels.Eq(i).Text())
+
+		dates := releaseLabels.Eq(i).Next().Children()
+
+		for j := range dates.Length() {
+			dateStr := strings.TrimSpace(dates.Eq(j).Find("div > h5").Text())
+			if dateStr == "" {
+				return nil, fmt.Errorf("date can't be empty")
+			}
+
+			countries := dates.Eq(j).Find("div > ul > li")
+
+			for k := range countries.Length() {
+				release := models.Release{MovieId: movieId, Date: dateStr, ReleaseType: releaseLabelText}
+
+				release.Country = strings.TrimSpace(countries.Eq(k).Find("span > span > span.name").Text())
+				if release.Country == "" {
+					return nil, fmt.Errorf("country name can't be empty")
+				}
+
+				ageRating := strings.TrimSpace(countries.Eq(k).Find("span > span > span > span.label").Text())
+				if ageRating != "" {
+					release.AgeRating = &ageRating
+				}
+
+				releases = append(releases, release)
+			}
+		}
+	}
+
+	return releases, nil
+}
