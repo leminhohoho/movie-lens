@@ -68,7 +68,7 @@ CREATE TABLE releases (
     movie_id INTEGER NOT NULL,
     date TEXT NOT NULL,
     country TEXT NOT NULL,
-    age_rating TEXT NOT NULL,
+    age_rating TEXT,
     release_type TEXT NOT NULL
 );
 
