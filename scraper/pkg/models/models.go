@@ -49,3 +49,8 @@ type Studio struct {
 	Url  string
 	Name string
 }
+
+type CountriesAndMovies struct {
+	MovieId int
+	Country string
+}
