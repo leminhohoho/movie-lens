@@ -60,3 +60,11 @@ type LanguagesAndMovies struct {
 	Language  string
 	IsPrimary bool
 }
+
+type Release struct {
+	MovieId     int
+	Date        string
+	Country     string
+	AgeRating   *string
+	ReleaseType string
+}
