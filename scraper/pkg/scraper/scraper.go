@@ -382,4 +382,31 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 			s.logger.Info("new crew added to db", "crew", crew)
 		}
 	}
+
+	// ---------------- SCRAPE STUDIOS ----------------- //
+
+	studios, err := ExtractStudios(doc.Selection, s.logger)
+	if err != nil {
+		s.errChan <- err
+		return
+
+	}
+
+	for i, studio := range studios {
+		if s.db.Table("studios").Where("url = ?", studio.Url).Find(&[]models.Crew{}).RowsAffected > 0 {
+			if err := s.db.Table("studios").Where("url = ?", studio.Url).First(&studios[i]).Error; err != nil {
+				s.errChan <- err
+				return
+			}
+
+			s.logger.Warn("studio already in the database", "studio", studio)
+		} else {
+			if err := s.db.Table("studios").Create(&studio).Error; err != nil {
+				s.errChan <- err
+				return
+			}
+
+			s.logger.Info("new studio added to db", "studio", studio)
+		}
+	}
 }
