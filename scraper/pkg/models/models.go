@@ -43,3 +43,9 @@ type Theme struct {
 	Url  string
 	Name string
 }
+
+type Studio struct {
+	Id   int
+	Url  string
+	Name string
+}
