@@ -409,4 +409,34 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 			s.logger.Info("new studio added to db", "studio", studio)
 		}
 	}
+
+	// ---------------- SCRAPE COUNTRIES ----------------- //
+
+	countries, err := ExtractCountries(movie.Id, doc.Selection, s.logger)
+	if err != nil {
+		s.errChan <- err
+		return
+	}
+
+	for i, country := range countries {
+		if s.db.Table("countries_and_movies").
+			Where("movie_id = ? AND country = ?", country.MovieId, country.Country).
+			Find(&[]models.CountriesAndMovies{}).RowsAffected > 0 {
+			if err := s.db.Table("countries_and_movies").
+				Where("movie_id = ? AND country = ?", country.MovieId, country.Country).
+				First(&countries[i]).Error; err != nil {
+				s.errChan <- err
+				return
+			}
+
+			s.logger.Warn("country is already in the database", "country", country)
+		} else {
+			if err := s.db.Table("countries_and_movies").Create(&country).Error; err != nil {
+				s.errChan <- err
+				return
+			}
+
+			s.logger.Info("new country added to db", "country", country)
+		}
+	}
 }
