@@ -301,3 +301,40 @@ func ExtractCountries(movieId int, doc *goquery.Selection, logger *slog.Logger) 
 
 	return countries, nil
 }
+
+func ExtractLanguages(movieId int, doc *goquery.Selection, logger *slog.Logger) ([]models.LanguagesAndMovies, error) {
+	languages := []models.LanguagesAndMovies{}
+
+	detailLabels := doc.Find("#tab-details > h3")
+
+	for i := range detailLabels.Length() {
+		detailLabel := detailLabels.Eq(i)
+		detailName := strings.TrimSpace(detailLabel.Find("span:first-child").Text())
+		languageAnchors := detailLabel.Next().Find("p > a")
+
+		switch detailName {
+		case "Language", "Primary Language", "Languages", "Primary Languages":
+			for j := range languageAnchors.Length() {
+
+				languageName := strings.TrimSpace(languageAnchors.Eq(j).Text())
+				if languageName == "" {
+					return nil, fmt.Errorf("language name can't be empty")
+				}
+
+				languages = append(languages, models.LanguagesAndMovies{MovieId: movieId, Language: languageName, IsPrimary: true})
+			}
+		case "Spoken Languages", "Spoken Language":
+			for j := range languageAnchors.Length() {
+
+				languageName := strings.TrimSpace(languageAnchors.Eq(j).Text())
+				if languageName == "" {
+					return nil, fmt.Errorf("language name can't be empty")
+				}
+
+				languages = append(languages, models.LanguagesAndMovies{MovieId: movieId, Language: languageName, IsPrimary: false})
+			}
+		}
+	}
+
+	return languages, nil
+}
