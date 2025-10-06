@@ -469,4 +469,34 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 			s.logger.Info("new language added to db", "language", language)
 		}
 	}
+
+	// ---------------- SCRAPE LANGUAGES ----------------- //
+
+	releases, err := ExtractReleases(movie.Id, doc.Selection, s.logger)
+	if err != nil {
+		s.errChan <- err
+		return
+	}
+
+	for i, release := range releases {
+		if s.db.Table("releases").
+			Where(&release, "movie_id", "date", "release_type", "country", "age_rating").
+			Find(&[]models.LanguagesAndMovies{}).RowsAffected > 0 {
+			if err := s.db.Table("releases").
+				Where(&release, "movie_id", "date", "release_type", "country", "age_rating").
+				First(&releases[i]).Error; err != nil {
+				s.errChan <- err
+				return
+			}
+
+			s.logger.Warn("release is already in the database", "release", release)
+		} else {
+			if err := s.db.Table("releases").Create(&release).Error; err != nil {
+				s.errChan <- err
+				return
+			}
+
+			s.logger.Info("new release added to db", "release", release)
+		}
+	}
 }
