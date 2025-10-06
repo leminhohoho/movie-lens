@@ -272,3 +272,32 @@ func ExtractStudios(doc *goquery.Selection, logger *slog.Logger) ([]models.Studi
 
 	return studios, nil
 }
+
+func ExtractCountries(movieId int, doc *goquery.Selection, logger *slog.Logger) ([]models.CountriesAndMovies, error) {
+	countries := []models.CountriesAndMovies{}
+
+	detailLabels := doc.Find("#tab-details > h3")
+
+	for i := range detailLabels.Length() {
+		detailLabel := detailLabels.Eq(i)
+
+		detailName := strings.TrimSpace(detailLabel.Find("span:first-child").Text())
+		if detailName != "Countries" && detailName != "Country" {
+			continue
+		}
+
+		countryAnchors := detailLabel.Next().Find("p > a")
+
+		for j := range countryAnchors.Length() {
+
+			countryName := strings.TrimSpace(countryAnchors.Eq(j).Text())
+			if countryName == "" {
+				return nil, fmt.Errorf("country name can't be empty")
+			}
+
+			countries = append(countries, models.CountriesAndMovies{MovieId: movieId, Country: countryName})
+		}
+	}
+
+	return countries, nil
+}
