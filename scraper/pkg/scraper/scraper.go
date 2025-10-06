@@ -156,9 +156,9 @@ func (s *Scraper) scrapeMembersPages(ctx context.Context) {
 			return
 		}
 
-		for _, user := range users {
+		for j, user := range users {
 			if s.db.Table("users").Where("url = ?", user.Url).Find(&[]models.Movie{}).RowsAffected > 0 {
-				if err := s.db.Table("users").Where("url = ?", user.Url).First(&user).Error; err != nil {
+				if err := s.db.Table("users").Where("url = ?", user.Url).First(&users[j]).Error; err != nil {
 					s.errChan <- err
 					return
 				}
@@ -296,16 +296,18 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 		return
 	}
 
-	for _, cast := range casts {
-		if s.db.Table("crews").Where("url = ?", cast.Url).Find(&[]models.Crew{}).RowsAffected > 0 {
-			if err := s.db.Table("crews").Where("url = ?", cast.Url).First(&cast).Error; err != nil {
+	crewTable := s.db.Table("crews")
+
+	for i, cast := range casts {
+		if crewTable.Where("url = ?", cast.Url).Find(&[]models.Crew{}).RowsAffected > 0 {
+			if err := crewTable.Where("url = ?", cast.Url).First(&casts[i]).Error; err != nil {
 				s.errChan <- err
 				return
 			}
 
 			s.logger.Warn("cast already in the database", "cast", cast)
 		} else {
-			if err := s.db.Table("crews").Create(&cast).Error; err != nil {
+			if err := crewTable.Create(&cast).Error; err != nil {
 				s.errChan <- err
 				return
 			}
@@ -316,65 +318,45 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 
 	// ---------------- SCRAPE GENRES & THEMES ----------------- //
 
-	categoryLabels := doc.Find("#tab-genres > h3")
+	genres, themes, err := ExtractGenresAndThemes(doc.Selection, s.logger)
+	if err != nil {
+		s.errChan <- err
+		return
+	}
 
-	for i := range categoryLabels.Length() {
-		categoryLabel := categoryLabels.Eq(i)
-		categoryLabelText := strings.TrimSpace(categoryLabel.Text())
-
-		switch categoryLabelText {
-		case "Genres":
-			genreNodes := categoryLabel.Next().Find("p > a")
-			for j := range genreNodes.Length() {
-				genreNode := genreNodes.Eq(j)
-
-				genreName := strings.TrimSpace(genreNode.Text())
-				genreUrl, exists := genreNode.Attr("href")
-				if !exists {
-					s.errChan <- fmt.Errorf("Genre url not found")
-					return
-				}
-
-				genre := models.Genre{Name: genreName, Url: genreUrl}
-
-				if err := s.db.Clauses(clause.OnConflict{
-					Columns:   []clause.Column{{Name: "url"}},
-					DoUpdates: clause.Assignments(map[string]interface{}{"url": gorm.Expr("excluded.url")}),
-				}).Table("genres").Create(&genre).Error; err != nil {
-					s.errChan <- err
-					return
-				}
-
-				genreUrl = "https://letterboxd.com" + genreUrl
-
-				s.logger.Debug("genre scraped", "genre", genre)
+	for i, genre := range genres {
+		if s.db.Table("genres").Where("url = ?", genre.Url).Find(&[]models.Crew{}).RowsAffected > 0 {
+			if err := s.db.Table("genres").Where("url = ?", genre.Url).First(&genres[i]).Error; err != nil {
+				s.errChan <- err
+				return
 			}
-		case "Themes":
-			themeNodes := categoryLabel.Next().Find("p > a:not([href^='/film/'])")
-			for j := range themeNodes.Length() {
-				themeNode := themeNodes.Eq(j)
 
-				themeName := strings.TrimSpace(themeNode.Text())
-				themeUrl, exists := themeNode.Attr("href")
-				if !exists {
-					s.errChan <- fmt.Errorf("Genre url not found")
-					return
-				}
-
-				themeUrl = "https://letterboxd.com" + themeUrl
-
-				theme := models.Theme{Name: themeName, Url: themeUrl}
-
-				if err := s.db.Clauses(clause.OnConflict{
-					Columns:   []clause.Column{{Name: "url"}},
-					DoUpdates: clause.Assignments(map[string]interface{}{"url": gorm.Expr("excluded.url")}),
-				}).Table("themes").Create(&theme).Error; err != nil {
-					s.errChan <- err
-					return
-				}
-
-				s.logger.Debug("theme scraped", "theme", theme)
+			s.logger.Warn("genre already in the database", "genre", genre)
+		} else {
+			if err := s.db.Table("genres").Create(&genre).Error; err != nil {
+				s.errChan <- err
+				return
 			}
+
+			s.logger.Info("new genre added to db", "genre", genre)
+		}
+	}
+
+	for i, theme := range themes {
+		if s.db.Table("themes").Where("url = ?", theme.Url).Find(&[]models.Crew{}).RowsAffected > 0 {
+			if err := s.db.Table("themes").Where("url = ?", theme.Url).First(&themes[i]).Error; err != nil {
+				s.errChan <- err
+				return
+			}
+
+			s.logger.Warn("theme already in the database", "theme", theme)
+		} else {
+			if err := s.db.Table("themes").Create(&theme).Error; err != nil {
+				s.errChan <- err
+				return
+			}
+
+			s.logger.Info("new theme added to db", "theme", theme)
 		}
 	}
 
