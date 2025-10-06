@@ -149,3 +149,50 @@ func ExtractCasts(doc *goquery.Selection, logger *slog.Logger) ([]models.Crew, e
 
 	return casts, nil
 }
+
+func ExtractGenresAndThemes(doc *goquery.Selection, logger *slog.Logger) ([]models.Genre, []models.Theme, error) {
+	genres := []models.Genre{}
+	themes := []models.Theme{}
+
+	categoryLabels := doc.Find("#tab-genres > h3")
+
+	for i := range categoryLabels.Length() {
+		categoryLabel := categoryLabels.Eq(i)
+		categoryLabelText := strings.TrimSpace(categoryLabel.Text())
+
+		switch categoryLabelText {
+		case "Genres":
+			genreNodes := categoryLabel.Next().Find("p > a")
+			for j := range genreNodes.Length() {
+				genreNode := genreNodes.Eq(j)
+
+				genreName := strings.TrimSpace(genreNode.Text())
+				genreUrl, exists := genreNode.Attr("href")
+				if !exists {
+					return nil, nil, fmt.Errorf("Genre url not found")
+				}
+
+				genre := models.Genre{Name: genreName, Url: "https://letterboxd.com" + genreUrl}
+
+				genres = append(genres, genre)
+			}
+		case "Themes":
+			themeNodes := categoryLabel.Next().Find("p > a:not([href^='/film/'])")
+			for j := range themeNodes.Length() {
+				themeNode := themeNodes.Eq(j)
+
+				themeName := strings.TrimSpace(themeNode.Text())
+				themeUrl, exists := themeNode.Attr("href")
+				if !exists {
+					return nil, nil, fmt.Errorf("Genre url not found")
+				}
+
+				theme := models.Theme{Name: themeName, Url: "https://letterboxd.com" + themeUrl}
+
+				themes = append(themes, theme)
+			}
+		}
+	}
+
+	return genres, themes, nil
+}
