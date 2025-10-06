@@ -196,3 +196,30 @@ func ExtractGenresAndThemes(doc *goquery.Selection, logger *slog.Logger) ([]mode
 
 	return genres, themes, nil
 }
+
+func ExtractCrews(doc *goquery.Selection, logger *slog.Logger) ([]models.Crew, error) {
+	crews := []models.Crew{}
+
+	crewLabels := doc.Find("#tab-crew > h3")
+
+	for i := range crewLabels.Length() {
+		role := strings.TrimSpace(crewLabels.Eq(i).Find("span:first-child").Text())
+		crewAnchors := crewLabels.Eq(i).Next().Find("p > a")
+
+		for j := range crewAnchors.Length() {
+			crewName := strings.TrimSpace(crewAnchors.Eq(j).Text())
+			crewUrl, exists := crewAnchors.Eq(j).Attr("href")
+			if !exists {
+				return nil, fmt.Errorf("crew url not found")
+			}
+
+			crewUrl = "https://letterboxd.com" + crewUrl
+
+			crew := models.Crew{Name: crewName, Url: crewUrl, Role: role}
+
+			crews = append(crews, crew)
+		}
+	}
+
+	return crews, nil
+}
