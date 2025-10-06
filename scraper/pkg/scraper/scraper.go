@@ -17,7 +17,6 @@ import (
 	"github.com/leminhohoho/movie-lens/scraper/pkg/utils"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 //go:embed setup.sql
@@ -296,18 +295,16 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 		return
 	}
 
-	crewTable := s.db.Table("crews")
-
 	for i, cast := range casts {
-		if crewTable.Where("url = ?", cast.Url).Find(&[]models.Crew{}).RowsAffected > 0 {
-			if err := crewTable.Where("url = ?", cast.Url).First(&casts[i]).Error; err != nil {
+		if s.db.Table("crews").Where("url = ?", cast.Url).Find(&[]models.Crew{}).RowsAffected > 0 {
+			if err := s.db.Table("crews").Where("url = ?", cast.Url).First(&casts[i]).Error; err != nil {
 				s.errChan <- err
 				return
 			}
 
 			s.logger.Warn("cast already in the database", "cast", cast)
 		} else {
-			if err := crewTable.Create(&cast).Error; err != nil {
+			if err := s.db.Table("crews").Create(&cast).Error; err != nil {
 				s.errChan <- err
 				return
 			}
@@ -362,33 +359,27 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 
 	// ---------------- SCRAPE CREWS ----------------- //
 
-	crewLabels := doc.Find("#tab-crew > h3")
+	crews, err := ExtractCrews(doc.Selection, s.logger)
+	if err != nil {
+		s.errChan <- err
+		return
+	}
 
-	for i := range crewLabels.Length() {
-		role := strings.TrimSpace(crewLabels.Eq(i).Find("span:first-child").Text())
-		crewAnchors := crewLabels.Eq(i).Next().Find("p > a")
-
-		for j := range crewAnchors.Length() {
-			crewName := strings.TrimSpace(crewAnchors.Eq(j).Text())
-			crewUrl, exists := crewAnchors.Eq(j).Attr("href")
-			if !exists {
-				s.errChan <- fmt.Errorf("crew url not found")
-				return
-			}
-
-			crewUrl = "https://letterboxd.com" + crewUrl
-
-			crew := models.Crew{Name: crewName, Url: crewUrl, Role: role}
-
-			if err := s.db.Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "url"}},
-				DoUpdates: clause.Assignments(map[string]interface{}{"url": gorm.Expr("excluded.url")}),
-			}).Table("crews").Create(&crew).Error; err != nil {
+	for i, crew := range crews {
+		if s.db.Table("crews").Where("url = ?", crew.Url).Find(&[]models.Crew{}).RowsAffected > 0 {
+			if err := s.db.Table("crews").Where("url = ?", crew.Url).First(&crews[i]).Error; err != nil {
 				s.errChan <- err
 				return
 			}
 
-			s.logger.Debug("crew scraped", "crew", crew)
+			s.logger.Warn("crew already in the database", "crew", crew)
+		} else {
+			if err := s.db.Table("crews").Create(&crew).Error; err != nil {
+				s.errChan <- err
+				return
+			}
+
+			s.logger.Info("new crew added to db", "crew", crew)
 		}
 	}
 }
