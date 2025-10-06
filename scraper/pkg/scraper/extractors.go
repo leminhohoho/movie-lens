@@ -235,3 +235,40 @@ func ExtractCrews(doc *goquery.Selection, logger *slog.Logger) ([]models.Crew, e
 
 	return crews, nil
 }
+
+func ExtractStudios(doc *goquery.Selection, logger *slog.Logger) ([]models.Studio, error) {
+	studios := []models.Studio{}
+
+	detailLabels := doc.Find("#tab-details > h3")
+
+	for i := range detailLabels.Length() {
+		detailLabel := detailLabels.Eq(i)
+
+		detailName := strings.TrimSpace(detailLabel.Find("span:first-child").Text())
+		if detailName != "Studios" {
+			continue
+		}
+
+		studioAnchors := detailLabel.Next().Find("p > a")
+
+		for j := range studioAnchors.Length() {
+			studioAnchor := studioAnchors.Eq(j)
+
+			studioName := strings.TrimSpace(studioAnchor.Text())
+			if studioName == "" {
+				return nil, fmt.Errorf("studio name can't be empty")
+			}
+
+			studioUrl, exists := studioAnchor.Attr("href")
+			if !exists {
+				return nil, fmt.Errorf("studio url not found")
+			}
+
+			studio := models.Studio{Name: studioName, Url: studioUrl}
+
+			studios = append(studios, studio)
+		}
+	}
+
+	return studios, nil
+}
