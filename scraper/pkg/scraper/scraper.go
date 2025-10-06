@@ -156,20 +156,9 @@ func (s *Scraper) scrapeMembersPages(ctx context.Context) {
 		}
 
 		for j, user := range users {
-			if s.db.Table("users").Where("url = ?", user.Url).Find(&[]models.Movie{}).RowsAffected > 0 {
-				if err := s.db.Table("users").Where("url = ?", user.Url).First(&users[j]).Error; err != nil {
-					s.errChan <- err
-					return
-				}
-
-				s.logger.Warn("user is already in the database", "user", user)
-			} else {
-				if err := s.db.Table("users").Create(&user).Error; err != nil {
-					s.errChan <- err
-					return
-				}
-
-				s.logger.Info("new user added to db", "user", user)
+			if err := utils.InsertOrUpdate(s.db, s.logger, "users", &users[j], "url = ?", user.Url); err != nil {
+				s.errChan <- err
+				return
 			}
 
 			s.scrapeUserPage(ctx, user)
@@ -271,20 +260,9 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 		return
 	}
 
-	if s.db.Table("movies").Where("url = ?", movie.Url).Find(&[]models.Crew{}).RowsAffected > 0 {
-		if err := s.db.Table("movies").Where("url = ?", movie.Url).First(&movie).Error; err != nil {
-			s.errChan <- err
-			return
-		}
-
-		s.logger.Warn("movie already in the database", "movie", movie)
-	} else {
-		if err := s.db.Table("movies").Create(&movie).Error; err != nil {
-			s.errChan <- err
-			return
-		}
-
-		s.logger.Info("new movie added to db", "movie", movie)
+	if err := utils.InsertOrUpdate(s.db, s.logger, "movies", &movie, "url = ?", movie.Url); err != nil {
+		s.errChan <- err
+		return
 	}
 
 	// ---------------- SCRAPE CASTS ----------------- //
@@ -295,21 +273,10 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 		return
 	}
 
-	for i, cast := range casts {
-		if s.db.Table("crews").Where("url = ?", cast.Url).Find(&[]models.Crew{}).RowsAffected > 0 {
-			if err := s.db.Table("crews").Where("url = ?", cast.Url).First(&casts[i]).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Warn("cast already in the database", "cast", cast)
-		} else {
-			if err := s.db.Table("crews").Create(&cast).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Debug("new cast added to db", "cast", cast)
+	for i := range casts {
+		if err := utils.InsertOrUpdate(s.db, s.logger, "crews", &casts[i], "url = ?", casts[i].Url); err != nil {
+			s.errChan <- err
+			return
 		}
 	}
 
@@ -321,39 +288,17 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 		return
 	}
 
-	for i, genre := range genres {
-		if s.db.Table("genres").Where("url = ?", genre.Url).Find(&[]models.Crew{}).RowsAffected > 0 {
-			if err := s.db.Table("genres").Where("url = ?", genre.Url).First(&genres[i]).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Warn("genre already in the database", "genre", genre)
-		} else {
-			if err := s.db.Table("genres").Create(&genre).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Info("new genre added to db", "genre", genre)
+	for i := range genres {
+		if err := utils.InsertOrUpdate(s.db, s.logger, "genres", &genres[i], "url = ?", genres[i].Url); err != nil {
+			s.errChan <- err
+			return
 		}
 	}
 
-	for i, theme := range themes {
-		if s.db.Table("themes").Where("url = ?", theme.Url).Find(&[]models.Crew{}).RowsAffected > 0 {
-			if err := s.db.Table("themes").Where("url = ?", theme.Url).First(&themes[i]).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Warn("theme already in the database", "theme", theme)
-		} else {
-			if err := s.db.Table("themes").Create(&theme).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Info("new theme added to db", "theme", theme)
+	for i := range themes {
+		if err := utils.InsertOrUpdate(s.db, s.logger, "themes", &themes[i], "url = ?", themes[i].Url); err != nil {
+			s.errChan <- err
+			return
 		}
 	}
 
@@ -365,21 +310,10 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 		return
 	}
 
-	for i, crew := range crews {
-		if s.db.Table("crews").Where("url = ?", crew.Url).Find(&[]models.Crew{}).RowsAffected > 0 {
-			if err := s.db.Table("crews").Where("url = ?", crew.Url).First(&crews[i]).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Warn("crew already in the database", "crew", crew)
-		} else {
-			if err := s.db.Table("crews").Create(&crew).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Info("new crew added to db", "crew", crew)
+	for i := range crews {
+		if err := utils.InsertOrUpdate(s.db, s.logger, "crews", &crews[i], "url = ?", crews[i].Url); err != nil {
+			s.errChan <- err
+			return
 		}
 	}
 
@@ -392,21 +326,10 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 
 	}
 
-	for i, studio := range studios {
-		if s.db.Table("studios").Where("url = ?", studio.Url).Find(&[]models.Crew{}).RowsAffected > 0 {
-			if err := s.db.Table("studios").Where("url = ?", studio.Url).First(&studios[i]).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Warn("studio already in the database", "studio", studio)
-		} else {
-			if err := s.db.Table("studios").Create(&studio).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Info("new studio added to db", "studio", studio)
+	for i := range studios {
+		if err := utils.InsertOrUpdate(s.db, s.logger, "studios", &studios[i], "url = ?", studios[i].Url); err != nil {
+			s.errChan <- err
+			return
 		}
 	}
 
@@ -418,25 +341,14 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 		return
 	}
 
-	for i, country := range countries {
-		if s.db.Table("countries_and_movies").
-			Where("movie_id = ? AND country = ?", country.MovieId, country.Country).
-			Find(&[]models.CountriesAndMovies{}).RowsAffected > 0 {
-			if err := s.db.Table("countries_and_movies").
-				Where("movie_id = ? AND country = ?", country.MovieId, country.Country).
-				First(&countries[i]).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Warn("country is already in the database", "country", country)
-		} else {
-			if err := s.db.Table("countries_and_movies").Create(&country).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Info("new country added to db", "country", country)
+	for i := range countries {
+		if err := utils.InsertOrUpdate(
+			s.db, s.logger, "countries_and_movies", &countries[i],
+			"movie_id = ? AND country = ?",
+			countries[i].MovieId, countries[i].Country,
+		); err != nil {
+			s.errChan <- err
+			return
 		}
 	}
 
@@ -448,25 +360,14 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 		return
 	}
 
-	for i, language := range languages {
-		if s.db.Table("languages_and_movies").
-			Where("movie_id = ? AND language = ? AND is_primary = ?", language.MovieId, language.Language, language.IsPrimary).
-			Find(&[]models.LanguagesAndMovies{}).RowsAffected > 0 {
-			if err := s.db.Table("languages_and_movies").
-				Where("movie_id = ? AND language = ? AND is_primary = ?", language.MovieId, language.Language, language.IsPrimary).
-				First(&languages[i]).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Warn("language is already in the database", "language", language)
-		} else {
-			if err := s.db.Table("languages_and_movies").Create(&language).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Info("new language added to db", "language", language)
+	for i := range languages {
+		if err := utils.InsertOrUpdate(
+			s.db, s.logger, "languages_and_movies", &languages[i],
+			"movie_id = ? AND language = ? AND is_primary = ?",
+			languages[i].MovieId, languages[i].Language, languages[i].IsPrimary,
+		); err != nil {
+			s.errChan <- err
+			return
 		}
 	}
 
@@ -478,25 +379,15 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 		return
 	}
 
-	for i, release := range releases {
-		if s.db.Table("releases").
-			Where(&release, "movie_id", "date", "release_type", "country", "age_rating").
-			Find(&[]models.LanguagesAndMovies{}).RowsAffected > 0 {
-			if err := s.db.Table("releases").
-				Where(&release, "movie_id", "date", "release_type", "country", "age_rating").
-				First(&releases[i]).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Warn("release is already in the database", "release", release)
-		} else {
-			if err := s.db.Table("releases").Create(&release).Error; err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.logger.Info("new release added to db", "release", release)
+	for i := range releases {
+		if err := utils.InsertOrUpdate(
+			s.db, s.logger, "releases",
+			&releases[i],
+			&releases[i],
+			"movie_id", "date", "release_type", "country", "age_rating",
+		); err != nil {
+			s.errChan <- err
+			return
 		}
 	}
 }
