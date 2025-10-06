@@ -54,3 +54,9 @@ type CountriesAndMovies struct {
 	MovieId int
 	Country string
 }
+
+type LanguagesAndMovies struct {
+	MovieId   int
+	Language  string
+	IsPrimary bool
+}
