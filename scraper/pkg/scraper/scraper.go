@@ -3,7 +3,6 @@ package scraper
 import (
 	"context"
 	_ "embed"
-	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
@@ -139,34 +138,19 @@ func (s *Scraper) execute(ctx context.Context, tasks ...chromedp.Action) error {
 }
 
 func (s *Scraper) scrapeMembersPages(ctx context.Context) {
-	for i := range s.maxPage {
-		var doc *goquery.Document
+	users, err := ScrapeMemberPages(ctx, s.logger)
+	if err != nil {
+		s.errChan <- err
+		return
+	}
 
-		if err := s.execute(ctx,
-			utils.NavigateTillTrigger(fmt.Sprintf("https://letterboxd.com/members/popular/page/%d/", i+1),
-				chromedp.WaitVisible("#content > div > div > section > table > tbody > tr:last-child"),
-				utils.Delay(time.Second*2, time.Millisecond*300),
-			),
-			utils.ToGoqueryDoc("html", &doc),
-		); err != nil {
+	for i := range users {
+		if err := utils.InsertOrUpdate(s.db, s.logger, "users", &users[i], "url = ?", users[i].Url); err != nil {
 			s.errChan <- err
 			return
 		}
 
-		users, err := ExtractUsers(doc.Selection, s.logger)
-		if err != nil {
-			s.errChan <- err
-			return
-		}
-
-		for j, user := range users {
-			if err := utils.InsertOrUpdate(s.db, s.logger, "users", &users[j], "url = ?", user.Url); err != nil {
-				s.errChan <- err
-				return
-			}
-
-			s.scrapeUserPage(ctx, user)
-		}
+		s.scrapeUserPage(ctx, users[i])
 	}
 }
 
