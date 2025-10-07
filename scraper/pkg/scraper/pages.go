@@ -16,6 +16,9 @@ import (
 )
 
 func ScrapeMemberPages(ctx context.Context, logger *slog.Logger) ([]models.User, error) {
+	pageCtx, cancel := chromedp.NewContext(ctx)
+	defer cancel()
+
 	maxPage, err := strconv.Atoi(strings.TrimSpace(os.Getenv("MAX_PAGE")))
 	if err != nil {
 		return nil, err
@@ -26,8 +29,8 @@ func ScrapeMemberPages(ctx context.Context, logger *slog.Logger) ([]models.User,
 	for i := range maxPage {
 		var doc *goquery.Document
 
-		if err := chromedp.Run(ctx,
-			utils.NavigateTillTrigger(prefix+fmt.Sprintf("/members/popular/page/%d/", i+1),
+		if err := chromedp.Run(pageCtx,
+			utils.NavigateTillTrigger(prefix+fmt.Sprintf("/members/popular/page/%d/", i+1), logger,
 				chromedp.WaitVisible("#content > div > div > section > table > tbody > tr:last-child"),
 				utils.Delay(time.Second*2, time.Millisecond*300),
 			),
@@ -46,3 +49,5 @@ func ScrapeMemberPages(ctx context.Context, logger *slog.Logger) ([]models.User,
 
 	return users, nil
 }
+
+// func ScraperUserPage(ctx context.Context)

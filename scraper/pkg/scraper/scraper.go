@@ -161,7 +161,7 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
 	lastMovieSel := "#content > div > div > section > div.poster-grid > ul > li:last-child > div > div > a > span.overlay"
 
 	if err := s.execute(ctx,
-		utils.NavigateTillTrigger(prefix+user.Url+"films/by/date/",
+		utils.NavigateTillTrigger(prefix+user.Url+"films/by/date/", s.logger,
 			chromedp.WaitVisible(lastMovieSel),
 			utils.Delay(time.Second*2, time.Millisecond*300),
 		),
@@ -214,7 +214,7 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 	var doc *goquery.Document
 
 	if err := s.execute(ctx,
-		utils.NavigateTillTrigger(prefix+filmUrl,
+		utils.NavigateTillTrigger(prefix+filmUrl, s.logger,
 			utils.Delay(time.Second*2, time.Millisecond*300),
 			chromedp.ActionFunc(func(localCtx context.Context) error {
 				var backdropExists bool
