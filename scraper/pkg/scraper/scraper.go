@@ -19,6 +19,10 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	prefix = "https://letterboxd.com"
+)
+
 //go:embed setup.sql
 var schema string
 
@@ -173,7 +177,7 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
 	lastMovieSel := "#content > div > div > section > div.poster-grid > ul > li:last-child > div > div > a > span.overlay"
 
 	if err := s.execute(ctx,
-		utils.NavigateTillTrigger(user.Url+"films/by/date/",
+		utils.NavigateTillTrigger(prefix+user.Url+"films/by/date/",
 			chromedp.WaitVisible(lastMovieSel),
 			utils.Delay(time.Second*2, time.Millisecond*300),
 		),
@@ -226,7 +230,7 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 	var doc *goquery.Document
 
 	if err := s.execute(ctx,
-		utils.NavigateTillTrigger(filmUrl,
+		utils.NavigateTillTrigger(prefix+filmUrl,
 			utils.Delay(time.Second*2, time.Millisecond*300),
 			chromedp.ActionFunc(func(localCtx context.Context) error {
 				var backdropExists bool

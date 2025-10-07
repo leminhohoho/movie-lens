@@ -35,8 +35,6 @@ func ExtractUsers(doc *goquery.Selection, logger *slog.Logger) ([]models.User, e
 			return nil, fmt.Errorf("user url not found for user: %s", name)
 		}
 
-		url = "https://letterboxd.com" + url
-
 		users = append(users, models.User{Name: name, Url: url})
 
 		logger.Debug("user url extracted", "name", url)
@@ -58,8 +56,6 @@ func ExtractMovieUrls(doc *goquery.Selection, logger *slog.Logger) ([]string, er
 		if !exists {
 			return nil, fmt.Errorf("film url not found")
 		}
-
-		url = "https://letterboxd.com" + url
 
 		urls = append(urls, url)
 
@@ -141,7 +137,7 @@ func ExtractCasts(doc *goquery.Selection, logger *slog.Logger) ([]models.Crew, e
 		cast.Name = castNode.Text()
 		logger.Debug("cast name extracted", "name", cast.Name)
 
-		cast.Url = "https://letterboxd.com" + castUrl
+		cast.Url = castUrl
 		cast.Role = "Actor"
 
 		casts = append(casts, cast)
@@ -176,7 +172,7 @@ func ExtractGenresAndThemes(doc *goquery.Selection, logger *slog.Logger) ([]mode
 					return nil, nil, fmt.Errorf("Genre url not found")
 				}
 
-				genre := models.Genre{Name: genreName, Url: "https://letterboxd.com" + genreUrl}
+				genre := models.Genre{Name: genreName, Url: genreUrl}
 
 				genres = append(genres, genre)
 			}
@@ -195,7 +191,7 @@ func ExtractGenresAndThemes(doc *goquery.Selection, logger *slog.Logger) ([]mode
 					return nil, nil, fmt.Errorf("Genre url not found")
 				}
 
-				theme := models.Theme{Name: themeName, Url: "https://letterboxd.com" + themeUrl}
+				theme := models.Theme{Name: themeName, Url: themeUrl}
 
 				themes = append(themes, theme)
 			}
@@ -224,8 +220,6 @@ func ExtractCrews(doc *goquery.Selection, logger *slog.Logger) ([]models.Crew, e
 			if !exists {
 				return nil, fmt.Errorf("crew url not found")
 			}
-
-			crewUrl = "https://letterboxd.com" + crewUrl
 
 			crew := models.Crew{Name: crewName, Url: crewUrl, Role: role}
 
