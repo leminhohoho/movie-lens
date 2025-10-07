@@ -105,7 +105,7 @@ CREATE TABLE users_and_movies (
     user_id INTEGER NOT NULL,
     movie_id INTEGER NOT NULL,
     watch_date TEXT NOT NULL,
-    rating REAL NOT NULL,
+    rating REAL,
     is_loved INTEGER NOT NULL CHECK (is_loved IN (0, 1)),
     review TEXT
 );
