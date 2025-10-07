@@ -278,6 +278,15 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 			s.errChan <- err
 			return
 		}
+
+		if err := utils.InsertOrUpdate(
+			s.db, s.logger, "crews_and_movies",
+			&models.CrewsAndMovies{MovieId: movie.Id, CrewId: casts[i].Id},
+			&models.CrewsAndMovies{MovieId: movie.Id, CrewId: casts[i].Id},
+		); err != nil {
+			s.errChan <- err
+			return
+		}
 	}
 
 	// ---------------- SCRAPE GENRES & THEMES ----------------- //
@@ -293,10 +302,28 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 			s.errChan <- err
 			return
 		}
+
+		if err := utils.InsertOrUpdate(
+			s.db, s.logger, "genres_and_movies",
+			&models.GenresAndMovies{MovieId: movie.Id, GenreId: genres[i].Id},
+			&models.GenresAndMovies{MovieId: movie.Id, GenreId: genres[i].Id},
+		); err != nil {
+			s.errChan <- err
+			return
+		}
 	}
 
 	for i := range themes {
 		if err := utils.InsertOrUpdate(s.db, s.logger, "themes", &themes[i], "url = ?", themes[i].Url); err != nil {
+			s.errChan <- err
+			return
+		}
+
+		if err := utils.InsertOrUpdate(
+			s.db, s.logger, "themes_and_movies",
+			&models.ThemesAndMovies{MovieId: movie.Id, ThemeId: themes[i].Id},
+			&models.ThemesAndMovies{MovieId: movie.Id, ThemeId: themes[i].Id},
+		); err != nil {
 			s.errChan <- err
 			return
 		}
@@ -315,6 +342,15 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 			s.errChan <- err
 			return
 		}
+
+		if err := utils.InsertOrUpdate(
+			s.db, s.logger, "crews_and_movies",
+			&models.CrewsAndMovies{MovieId: movie.Id, CrewId: crews[i].Id},
+			&models.CrewsAndMovies{MovieId: movie.Id, CrewId: crews[i].Id},
+		); err != nil {
+			s.errChan <- err
+			return
+		}
 	}
 
 	// ---------------- SCRAPE STUDIOS ----------------- //
@@ -328,6 +364,15 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 
 	for i := range studios {
 		if err := utils.InsertOrUpdate(s.db, s.logger, "studios", &studios[i], "url = ?", studios[i].Url); err != nil {
+			s.errChan <- err
+			return
+		}
+
+		if err := utils.InsertOrUpdate(
+			s.db, s.logger, "studios_and_movies",
+			&models.StudiosAndMovies{MovieId: movie.Id, StudioId: studios[i].Id},
+			&models.StudiosAndMovies{MovieId: movie.Id, StudioId: studios[i].Id},
+		); err != nil {
 			s.errChan <- err
 			return
 		}
