@@ -24,6 +24,11 @@ type Crew struct {
 	Role string
 }
 
+type CrewsAndMovies struct {
+	CrewId  int
+	MovieId int
+}
+
 type UsersAndMovies struct {
 	UserId    int
 	MovieId   int
@@ -38,16 +43,31 @@ type Genre struct {
 	Name string
 }
 
+type GenresAndMovies struct {
+	GenreId int
+	MovieId int
+}
+
 type Theme struct {
 	Id   int
 	Url  string
 	Name string
 }
 
+type ThemesAndMovies struct {
+	ThemeId int
+	MovieId int
+}
+
 type Studio struct {
 	Id   int
 	Url  string
 	Name string
+}
+
+type StudiosAndMovies struct {
+	StudioId int
+	MovieId  int
 }
 
 type CountriesAndMovies struct {
