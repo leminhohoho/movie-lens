@@ -36,7 +36,7 @@ func NewApp() (*App, error) {
 }
 
 func (a *App) Run() error {
-	a.Logger.Debug(
+	a.Logger.Info(
 		"scraper info",
 		"db_path", os.Getenv("DB_PATH"),
 		"proxy_url", os.Getenv("PROXY_URL"),
