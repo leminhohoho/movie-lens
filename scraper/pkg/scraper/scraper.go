@@ -173,7 +173,7 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
 	lastMovieSel := "#content > div > div > section > div.poster-grid > ul > li:last-child > div > div > a > span.overlay"
 
 	if err := s.execute(ctx,
-		utils.NavigateTillTrigger(user.Url+"films/",
+		utils.NavigateTillTrigger(user.Url+"films/by/date/",
 			chromedp.WaitVisible(lastMovieSel),
 			utils.Delay(time.Second*2, time.Millisecond*300),
 		),
