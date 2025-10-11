@@ -3,6 +3,7 @@ package scraper
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
@@ -10,9 +11,9 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"github.com/leminhohoho/movie-lens/scraper/pkg/models"
+	"github.com/leminhohoho/movie-lens/scraper/pkg/scraper/extractors"
 	"github.com/leminhohoho/movie-lens/scraper/pkg/utils"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -103,55 +104,43 @@ func NewScraper(logger *slog.Logger, errChan chan error) (*Scraper, error) {
 }
 
 func (s *Scraper) Run() {
-	ctx, cancel := s.newTab(s.baseCtx)
+	ctx, cancel := utils.NewTab(s.baseCtx, s.logger)
 	defer cancel()
 
 	s.scrapeMembersPages(ctx)
 }
 
-func (s *Scraper) newTab(ctx context.Context) (context.Context, context.CancelFunc) {
-	cdpCtx, cancel := chromedp.NewContext(ctx)
-
-	go chromedp.ListenTarget(cdpCtx, func(ev any) {
-		switch e := ev.(type) {
-		case *network.EventRequestWillBeSent:
-			s.logger.Debug(
-				"request to be sent",
-				"url", e.Request.URL,
-				"method", e.Request.Method,
-			)
-		case *network.EventResponseReceived:
-			s.logger.Debug(
-				"response recieved",
-				"url", e.Response.URL,
-				"status_code", e.Response.Status,
-				"content_type", e.Response.MimeType,
-			)
-		}
-	})
-
-	return cdpCtx, cancel
-}
-
-func (s *Scraper) execute(ctx context.Context, tasks ...chromedp.Action) error {
-	return chromedp.Run(ctx, tasks...)
-}
-
 func (s *Scraper) scrapeMembersPages(ctx context.Context) {
-	users, err := ScrapeMemberPages(ctx, s.logger)
-	if err != nil {
-		s.errChan <- err
-		return
-	}
+	for i := range s.maxPage {
+		var doc *goquery.Document
 
-	for i := range users {
-		if err := utils.InsertOrUpdate(s.db, s.logger, "users", &users[i], "url = ?", users[i].Url); err != nil {
+		if err := chromedp.Run(ctx,
+			utils.NavigateTillTrigger("https://letterboxd.com"+fmt.Sprintf("/members/popular/page/%d/", i+1), s.logger,
+				chromedp.WaitVisible("#content > div > div > section > table > tbody > tr:last-child"),
+				utils.Delay(time.Second*2, time.Millisecond*300),
+			),
+			utils.ToGoqueryDoc("html", &doc),
+		); err != nil {
 			s.errChan <- err
 			return
 		}
 
-		s.scrapeUserPage(ctx, users[i])
+		users, err := extractors.ExtractUsers(doc.Selection, s.logger)
+		if err != nil {
+			s.errChan <- err
+			return
+		}
+
+		for j := range users {
+			if err := utils.InsertOrUpdate(s.db, s.logger, "users", &users[j], "url = ?", users[j].Url); err != nil {
+				s.errChan <- err
+				return
+			}
+
+			s.scrapeUserPage(ctx, users[j])
+		}
 	}
+
 }
 
 func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
@@ -160,7 +149,7 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
 	lastPageSel := "#content > div > div > section > div.pagination > div.paginate-pages > ul > li:last-child > a"
 	lastMovieSel := "#content > div > div > section > div.poster-grid > ul > li:last-child > div > div > a > span.overlay"
 
-	if err := s.execute(ctx,
+	if err := chromedp.Run(ctx,
 		utils.NavigateTillTrigger(prefix+user.Url+"films/by/date/", s.logger,
 			chromedp.WaitVisible(lastMovieSel),
 			utils.Delay(time.Second*2, time.Millisecond*300),
@@ -180,7 +169,7 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
 	for i := 1; i <= maxFilmsPage; i++ {
 		var doc *goquery.Document
 
-		if err := s.execute(ctx,
+		if err := chromedp.Run(ctx,
 			chromedp.ActionFunc(func(localCtx context.Context) error {
 				if i != 1 {
 					return chromedp.Click(nextBtnSel).Do(localCtx)
@@ -195,15 +184,14 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
 			s.errChan <- err
 			return
 		}
-
-		filmUrls, err := ExtractMovieUrls(doc.Selection, s.logger)
+		filmUrls, err := extractors.ExtractMovieUrls(doc.Selection, s.logger)
 		if err != nil {
 			s.errChan <- err
 			return
 		}
 
 		for _, filmUrl := range filmUrls {
-			moviePageCtx, cancel := s.newTab(ctx)
+			moviePageCtx, cancel := utils.NewTab(ctx, s.logger)
 			s.scrapeMovie(moviePageCtx, filmUrl)
 			cancel()
 		}
@@ -213,7 +201,7 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
 func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 	var doc *goquery.Document
 
-	if err := s.execute(ctx,
+	if err := chromedp.Run(ctx,
 		utils.NavigateTillTrigger(prefix+filmUrl, s.logger,
 			utils.Delay(time.Second*2, time.Millisecond*300),
 			chromedp.ActionFunc(func(localCtx context.Context) error {
@@ -241,8 +229,7 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 	}
 
 	// ---------------- SCRAPE MOVIE ----------------- //
-
-	movie, err := ExtractMovie(filmUrl, doc.Selection, s.logger)
+	movie, err := extractors.ExtractMovie(filmUrl, doc.Selection, s.logger)
 	if err != nil {
 		s.errChan <- err
 		return
@@ -254,8 +241,7 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 	}
 
 	// ---------------- SCRAPE CASTS ----------------- //
-
-	casts, err := ExtractCasts(doc.Selection, s.logger)
+	casts, err := extractors.ExtractCasts(doc.Selection, s.logger)
 	if err != nil {
 		s.errChan <- err
 		return
@@ -278,8 +264,7 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 	}
 
 	// ---------------- SCRAPE GENRES & THEMES ----------------- //
-
-	genres, themes, err := ExtractGenresAndThemes(doc.Selection, s.logger)
+	genres, themes, err := extractors.ExtractGenresAndThemes(doc.Selection, s.logger)
 	if err != nil {
 		s.errChan <- err
 		return
@@ -318,8 +303,7 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 	}
 
 	// ---------------- SCRAPE CREWS ----------------- //
-
-	crews, err := ExtractCrews(doc.Selection, s.logger)
+	crews, err := extractors.ExtractCrews(doc.Selection, s.logger)
 	if err != nil {
 		s.errChan <- err
 		return
@@ -342,8 +326,7 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 	}
 
 	// ---------------- SCRAPE STUDIOS ----------------- //
-
-	studios, err := ExtractStudios(doc.Selection, s.logger)
+	studios, err := extractors.ExtractStudios(doc.Selection, s.logger)
 	if err != nil {
 		s.errChan <- err
 		return
@@ -367,8 +350,7 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 	}
 
 	// ---------------- SCRAPE COUNTRIES ----------------- //
-
-	countries, err := ExtractCountries(movie.Id, doc.Selection, s.logger)
+	countries, err := extractors.ExtractCountries(movie.Id, doc.Selection, s.logger)
 	if err != nil {
 		s.errChan <- err
 		return
@@ -386,8 +368,7 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 	}
 
 	// ---------------- SCRAPE LANGUAGES ----------------- //
-
-	languages, err := ExtractLanguages(movie.Id, doc.Selection, s.logger)
+	languages, err := extractors.ExtractLanguages(movie.Id, doc.Selection, s.logger)
 	if err != nil {
 		s.errChan <- err
 		return
@@ -405,8 +386,7 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 	}
 
 	// ---------------- SCRAPE LANGUAGES ----------------- //
-
-	releases, err := ExtractReleases(movie.Id, doc.Selection, s.logger)
+	releases, err := extractors.ExtractReleases(movie.Id, doc.Selection, s.logger)
 	if err != nil {
 		s.errChan <- err
 		return
