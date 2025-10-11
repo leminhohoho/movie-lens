@@ -208,12 +208,15 @@ func ExtractCrews(doc *goquery.Selection, logger *slog.Logger) ([]models.Crew, e
 
 	for i := range crewLabels.Length() {
 		role := strings.TrimSpace(crewLabels.Eq(i).Find("span:first-child").Text())
+		logger.Debug("crew role", "role", role)
+
 		crewAnchors := crewLabels.Eq(i).Next().Find("p > a")
 
 		for j := range crewAnchors.Length() {
 			crewName := strings.TrimSpace(crewAnchors.Eq(j).Text())
 			if crewName == "" {
-				return nil, fmt.Errorf("crew name can't be empty")
+				logger.Warn("crew name can't be empty")
+				continue
 			}
 
 			crewUrl, exists := crewAnchors.Eq(j).Attr("href")
