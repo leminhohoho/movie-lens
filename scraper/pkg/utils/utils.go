@@ -1,10 +1,13 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"reflect"
 
+	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/chromedp"
 	"gorm.io/gorm"
 )
 
@@ -45,4 +48,30 @@ func InsertOrUpdate(db *gorm.DB, logger *slog.Logger, table string, dest interfa
 	logger.Info(fmt.Sprintf("new row inserted into %s", table), "row", elem)
 
 	return nil
+}
+
+// NewTab create a new chromium window with additional listeners for logging.
+// It takes a based chromedp.Context with a *sloger.Logger to log informations.
+func NewTab(ctx context.Context, logger *slog.Logger) (context.Context, context.CancelFunc) {
+	cdpCtx, cancel := chromedp.NewContext(ctx)
+
+	go chromedp.ListenTarget(cdpCtx, func(ev any) {
+		switch e := ev.(type) {
+		case *network.EventRequestWillBeSent:
+			logger.Debug(
+				"request to be sent",
+				"url", e.Request.URL,
+				"method", e.Request.Method,
+			)
+		case *network.EventResponseReceived:
+			logger.Debug(
+				"response recieved",
+				"url", e.Response.URL,
+				"status_code", e.Response.Status,
+				"content_type", e.Response.MimeType,
+			)
+		}
+	})
+
+	return cdpCtx, cancel
 }
