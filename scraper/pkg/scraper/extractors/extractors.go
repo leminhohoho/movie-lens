@@ -25,14 +25,16 @@ func ExtractUsers(doc *goquery.Selection, logger *slog.Logger) ([]models.User, e
 
 		name := anchor.Text()
 		if name == "" {
-			return nil, fmt.Errorf("user name can't be empty")
+			logger.Warn("user name can't be empty, skipping")
+			continue
 		}
 
 		logger.Debug("user name extracted", "name", name)
 
 		url, exists := anchor.Attr("href")
 		if !exists {
-			return nil, fmt.Errorf("user url not found for user: %s", name)
+			logger.Warn("user url not found for user, skipping", "name", name)
+			continue
 		}
 
 		users = append(users, models.User{Name: name, Url: url})
@@ -54,7 +56,9 @@ func ExtractMovieUrls(doc *goquery.Selection, logger *slog.Logger) ([]string, er
 		anchor := filmNodes.Eq(i).Find("div > div > a")
 		url, exists := anchor.Attr("href")
 		if !exists {
-			return nil, fmt.Errorf("film url not found")
+			logger.Warn("film url not found, skipping")
+			continue
+
 		}
 
 		urls = append(urls, url)
@@ -130,7 +134,8 @@ func ExtractCasts(doc *goquery.Selection, logger *slog.Logger) ([]models.Crew, e
 		castNode := castNodes.Eq(i)
 		castUrl, exists := castNode.Attr("href")
 		if !exists {
-			return nil, fmt.Errorf("No cast url found for this actor/actress")
+			logger.Warn("No cast url found for this actor/actress, skipping")
+			continue
 		}
 		logger.Debug("cast url extracted", "url", castUrl)
 
@@ -164,12 +169,14 @@ func ExtractGenresAndThemes(doc *goquery.Selection, logger *slog.Logger) ([]mode
 
 				genreName := strings.TrimSpace(genreNode.Text())
 				if genreName == "" {
-					return nil, nil, fmt.Errorf("genre name can't be empty")
+					logger.Warn("genre name can't be empty, skipping")
+					continue
 				}
 
 				genreUrl, exists := genreNode.Attr("href")
 				if !exists {
-					return nil, nil, fmt.Errorf("Genre url not found")
+					logger.Warn("Genre url not found, skipping")
+					continue
 				}
 
 				genre := models.Genre{Name: genreName, Url: genreUrl}
@@ -183,12 +190,14 @@ func ExtractGenresAndThemes(doc *goquery.Selection, logger *slog.Logger) ([]mode
 
 				themeName := strings.TrimSpace(themeNode.Text())
 				if themeName == "" {
-					return nil, nil, fmt.Errorf("theme name can't be empty")
+					logger.Warn("theme name can't be empty, skipping")
+					continue
 				}
 
 				themeUrl, exists := themeNode.Attr("href")
 				if !exists {
-					return nil, nil, fmt.Errorf("Genre url not found")
+					logger.Warn("Genre url not found, skipping")
+					continue
 				}
 
 				theme := models.Theme{Name: themeName, Url: themeUrl}
@@ -215,13 +224,14 @@ func ExtractCrews(doc *goquery.Selection, logger *slog.Logger) ([]models.Crew, e
 		for j := range crewAnchors.Length() {
 			crewName := strings.TrimSpace(crewAnchors.Eq(j).Text())
 			if crewName == "" {
-				logger.Warn("crew name can't be empty")
+				logger.Warn("crew name can't be empty, skipping")
 				continue
 			}
 
 			crewUrl, exists := crewAnchors.Eq(j).Attr("href")
 			if !exists {
-				return nil, fmt.Errorf("crew url not found")
+				logger.Warn("crew url not found, skipping")
+				continue
 			}
 
 			crew := models.Crew{Name: crewName, Url: crewUrl, Role: role}
@@ -253,12 +263,14 @@ func ExtractStudios(doc *goquery.Selection, logger *slog.Logger) ([]models.Studi
 
 			studioName := strings.TrimSpace(studioAnchor.Text())
 			if studioName == "" {
-				return nil, fmt.Errorf("studio name can't be empty")
+				logger.Warn("studio name can't be empty, skipping")
+				continue
 			}
 
 			studioUrl, exists := studioAnchor.Attr("href")
 			if !exists {
-				return nil, fmt.Errorf("studio url not found")
+				logger.Warn("studio url not found, skipping")
+				continue
 			}
 
 			studio := models.Studio{Name: studioName, Url: studioUrl}
@@ -289,7 +301,8 @@ func ExtractCountries(movieId int, doc *goquery.Selection, logger *slog.Logger) 
 
 			countryName := strings.TrimSpace(countryAnchors.Eq(j).Text())
 			if countryName == "" {
-				return nil, fmt.Errorf("country name can't be empty")
+				logger.Warn("country name can't be empty, skipping")
+				continue
 			}
 
 			countries = append(countries, models.CountriesAndMovies{MovieId: movieId, Country: countryName})
@@ -315,7 +328,8 @@ func ExtractLanguages(movieId int, doc *goquery.Selection, logger *slog.Logger) 
 
 				languageName := strings.TrimSpace(languageAnchors.Eq(j).Text())
 				if languageName == "" {
-					return nil, fmt.Errorf("language name can't be empty")
+					logger.Warn("language name can't be empty, skipping")
+					continue
 				}
 
 				languages = append(languages, models.LanguagesAndMovies{MovieId: movieId, Language: languageName, IsPrimary: true})
@@ -325,7 +339,8 @@ func ExtractLanguages(movieId int, doc *goquery.Selection, logger *slog.Logger) 
 
 				languageName := strings.TrimSpace(languageAnchors.Eq(j).Text())
 				if languageName == "" {
-					return nil, fmt.Errorf("language name can't be empty")
+					logger.Warn("language name can't be empty, skipping")
+					continue
 				}
 
 				languages = append(languages, models.LanguagesAndMovies{MovieId: movieId, Language: languageName, IsPrimary: false})
@@ -349,7 +364,8 @@ func ExtractReleases(movieId int, doc *goquery.Selection, logger *slog.Logger) (
 		for j := range dates.Length() {
 			dateStr := strings.TrimSpace(dates.Eq(j).Find("div > h5").Text())
 			if dateStr == "" {
-				return nil, fmt.Errorf("date can't be empty")
+				logger.Warn("date can't be empty, skipping")
+				continue
 			}
 
 			countries := dates.Eq(j).Find("div > ul > li")
@@ -359,7 +375,8 @@ func ExtractReleases(movieId int, doc *goquery.Selection, logger *slog.Logger) (
 
 				release.Country = strings.TrimSpace(countries.Eq(k).Find("span > span > span.name").Text())
 				if release.Country == "" {
-					return nil, fmt.Errorf("country name can't be empty")
+					logger.Warn("country name can't be empty, skipping")
+					continue
 				}
 
 				ageRating := strings.TrimSpace(countries.Eq(k).Find("span > span > span > span.label").Text())
