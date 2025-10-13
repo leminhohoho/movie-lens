@@ -29,12 +29,14 @@ type CrewsAndMovies struct {
 	MovieId int
 }
 
-type UsersAndMovies struct {
-	UserId    int
-	MovieId   int
-	WatchDate time.Time
-	IsLoved   bool
-	Review    *string
+type UserAndMovie struct {
+	UserId  int
+	MovieId int
+	Date    time.Time
+	IsWatch bool
+	Rating  float32
+	IsLoved bool
+	Review  *string
 }
 
 type Genre struct {

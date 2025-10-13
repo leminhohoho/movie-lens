@@ -104,7 +104,8 @@ DROP TABLE IF EXISTS users_and_movies;
 CREATE TABLE users_and_movies (
     user_id INTEGER NOT NULL,
     movie_id INTEGER NOT NULL,
-    watch_date TEXT,
+    date TEXT NOT NULL,
+    is_watch INTEGER NOT NULL CHECK (is_loved IN (0, 1)),
     rating REAL,
     is_loved INTEGER NOT NULL CHECK (is_loved IN (0, 1)),
     review TEXT
