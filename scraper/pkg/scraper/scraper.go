@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -189,11 +190,26 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) error {
 		}
 
 		for _, filmUrl := range filmUrls {
-			moviePageCtx, cancel := utils.NewTab(ctx, s.logger)
+			moviePageCtx, moviePageCancel := utils.NewTab(ctx, s.logger)
+			userActivitiesPageCtx, userActivitiesPageCancel := utils.NewTab(ctx, s.logger)
+
 			if err := s.scrapeMovie(moviePageCtx, filmUrl); err != nil {
 				return err
 			}
-			cancel()
+
+			var movie models.Movie
+
+			if err := s.db.Table("movies").Where("url = ?", filmUrl).First(&movie).Error; err != nil {
+				return err
+			}
+
+			moviePageCancel()
+
+			if err := s.scrapeUserFilmActivities(userActivitiesPageCtx, user, movie); err != nil {
+				return err
+			}
+
+			userActivitiesPageCancel()
 		}
 	}
 
@@ -384,4 +400,127 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) error {
 	}
 
 	return nil
+}
+
+func (s *Scraper) scrapeUserFilmActivities(ctx context.Context, user models.User, movie models.Movie) error {
+	var err error
+
+	url := prefix + path.Join(user.Url, movie.Url, "/activity")
+
+	var doc *goquery.Document
+
+	if err := chromedp.Run(ctx,
+		utils.NavigateTillTrigger(url, s.logger,
+			utils.Delay(time.Second*2, time.Millisecond*300),
+			chromedp.WaitVisible("#activity-table-body > section.activity-row.no-activity-message > p"),
+			utils.Delay(time.Second*1, time.Millisecond*300),
+		),
+		utils.ToGoqueryDoc("html", &doc),
+	); err != nil {
+		return err
+	}
+
+	activityNodes := doc.Find("#activity-table-body > section[data-activity-id]")
+
+	for i := range activityNodes.Length() {
+		node := activityNodes.Eq(i)
+		userAndMovie := models.UserAndMovie{UserId: user.Id, MovieId: movie.Id}
+
+		activityDateStr, exists := node.Find("time").Attr("datetime")
+		if !exists {
+			s.logger.Warn("activity date not found, skipping", "user", user.Url, "movie", movie.Url)
+			continue
+		}
+
+		userAndMovie.Date, err = time.Parse(time.RFC3339, strings.TrimSpace(activityDateStr))
+		if err != nil {
+			s.logger.Warn("error parsing activity date", "msg", err.Error())
+			continue
+		}
+
+		content := node.Find("div > p > a > span.context").Text()
+
+		actions := utils.MultiSplit(content, "and", ",")
+
+		for i := range actions {
+			action := strings.TrimSpace(actions[i])
+
+			switch action {
+			case "liked":
+				userAndMovie.IsLoved = true
+			case "watched", "rewatched":
+				userAndMovie.IsWatch = true
+			case "rated":
+				ratingStr := node.Find("div > p > span.rating").Text()
+				userAndMovie.Rating = float32(strings.Count(ratingStr, "★")) + float32(strings.Count(ratingStr, "½"))/2
+			case "reviewed":
+				reviewUrl, exists := node.Find("div > p > a.target").Attr("href")
+				if !exists {
+					s.logger.Warn("review url is empty, skipping")
+					continue
+				}
+
+				reviewPageCtx, reviewPageCancel := utils.NewTab(ctx, s.logger)
+				review, err := s.scrapeUserReviewPage(reviewPageCtx, reviewUrl)
+				if err != nil {
+					return err
+				}
+
+				reviewPageCancel()
+
+				if review != "" {
+					userAndMovie.Review = &review
+				}
+			}
+		}
+
+		if err := utils.InsertOrUpdate(s.db, s.logger,
+			"users_and_movies",
+			&userAndMovie,
+			&userAndMovie,
+			"user_id", "movie_id", "date",
+		); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *Scraper) scrapeUserReviewPage(ctx context.Context, reviewUrl string) (string, error) {
+	var review string
+
+	reviewContentSel := "#content > div > div > section > section > div.review.body-text.-prose.-hero.-loose > div > div > div > p"
+	moviePosterSel := "#content > div > div > section > div.col-4.gutter-right-1 > section.poster-list.-p150.el.col.viewing-poster-container > div > div > a > span.overlay"
+	spoilerBtnSel := "#content > div > div > section > section > div.review.body-text.-prose.-hero.-loose > div.js-spoiler-container > div > div > a"
+
+	if err := chromedp.Run(ctx,
+		utils.NavigateTillTrigger(prefix+reviewUrl, s.logger,
+			utils.Delay(time.Second*2, time.Millisecond*300),
+			chromedp.WaitVisible(moviePosterSel),
+			utils.Delay(time.Second*1, time.Millisecond*300),
+		),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			var spoilerAlert bool
+
+			if err := chromedp.Evaluate(
+				fmt.Sprintf(`document.querySelector("%s") != null`, spoilerBtnSel), &spoilerAlert,
+			).Do(ctx); err != nil {
+				return err
+			}
+
+			if spoilerAlert {
+				if err := chromedp.Click(spoilerBtnSel).Do(ctx); err != nil {
+					return err
+				}
+			}
+
+			return nil
+		}),
+		chromedp.Text(reviewContentSel, &review),
+	); err != nil {
+		return "", err
+	}
+
+	return review, nil
 }
