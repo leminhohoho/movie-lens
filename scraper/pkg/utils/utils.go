@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"strings"
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
@@ -74,4 +75,20 @@ func NewTab(ctx context.Context, logger *slog.Logger) (context.Context, context.
 	})
 
 	return cdpCtx, cancel
+}
+
+func MultiSplit(s string, seps ...string) []string {
+	if len(seps) == 0 {
+		return []string{s}
+	}
+
+	splitted := []string{}
+
+	for _, fragment := range strings.Split(s, seps[0]) {
+		splittedFragment := MultiSplit(fragment, seps[1:]...)
+
+		splitted = append(splitted, splittedFragment...)
+	}
+
+	return splitted
 }
