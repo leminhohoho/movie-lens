@@ -107,10 +107,12 @@ func (s *Scraper) Run() {
 	ctx, cancel := utils.NewTab(s.baseCtx, s.logger)
 	defer cancel()
 
-	s.scrapeMembersPages(ctx)
+	if err := s.scrapeMembersPages(ctx); err != nil {
+		s.errChan <- err
+	}
 }
 
-func (s *Scraper) scrapeMembersPages(ctx context.Context) {
+func (s *Scraper) scrapeMembersPages(ctx context.Context) error {
 	for i := range s.maxPage {
 		var doc *goquery.Document
 
@@ -121,29 +123,29 @@ func (s *Scraper) scrapeMembersPages(ctx context.Context) {
 			),
 			utils.ToGoqueryDoc("html", &doc),
 		); err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 
 		users, err := extractors.ExtractUsers(doc.Selection, s.logger)
 		if err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 
 		for j := range users {
 			if err := utils.InsertOrUpdate(s.db, s.logger, "users", &users[j], "url = ?", users[j].Url); err != nil {
-				s.errChan <- err
-				return
+				return err
 			}
 
-			s.scrapeUserPage(ctx, users[j])
+			if err := s.scrapeUserPage(ctx, users[j]); err != nil {
+				return err
+			}
 		}
 	}
 
+	return nil
 }
 
-func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
+func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) error {
 	var maxFilmsPageStr string
 	nextBtnSel := "#content > div > div > section > div.pagination > div:nth-child(2) > a"
 	lastPageSel := "#content > div > div > section > div.pagination > div.paginate-pages > ul > li:last-child > a"
@@ -156,14 +158,12 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
 		),
 		chromedp.Text(lastPageSel, &maxFilmsPageStr),
 	); err != nil {
-		s.errChan <- err
-		return
+		return err
 	}
 
 	maxFilmsPage, err := strconv.Atoi(strings.TrimSpace(maxFilmsPageStr))
 	if err != nil {
-		s.errChan <- err
-		return
+		return err
 	}
 
 	for i := 1; i <= maxFilmsPage; i++ {
@@ -181,24 +181,26 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) {
 			utils.Delay(time.Second*2, time.Millisecond*300),
 			utils.ToGoqueryDoc("html", &doc),
 		); err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 		filmUrls, err := extractors.ExtractMovieUrls(doc.Selection, s.logger)
 		if err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 
 		for _, filmUrl := range filmUrls {
 			moviePageCtx, cancel := utils.NewTab(ctx, s.logger)
-			s.scrapeMovie(moviePageCtx, filmUrl)
+			if err := s.scrapeMovie(moviePageCtx, filmUrl); err != nil {
+				return err
+			}
 			cancel()
 		}
 	}
+
+	return nil
 }
 
-func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
+func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) error {
 	var doc *goquery.Document
 
 	if err := chromedp.Run(ctx,
@@ -224,33 +226,28 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 		),
 		utils.ToGoqueryDoc("html", &doc),
 	); err != nil {
-		s.errChan <- err
-		return
+		return err
 	}
 
 	// ---------------- SCRAPE MOVIE ----------------- //
 	movie, err := extractors.ExtractMovie(filmUrl, doc.Selection, s.logger)
 	if err != nil {
-		s.errChan <- err
-		return
+		return err
 	}
 
 	if err := utils.InsertOrUpdate(s.db, s.logger, "movies", &movie, "url = ?", movie.Url); err != nil {
-		s.errChan <- err
-		return
+		return err
 	}
 
 	// ---------------- SCRAPE CASTS ----------------- //
 	casts, err := extractors.ExtractCasts(doc.Selection, s.logger)
 	if err != nil {
-		s.errChan <- err
-		return
+		return err
 	}
 
 	for i := range casts {
 		if err := utils.InsertOrUpdate(s.db, s.logger, "crews", &casts[i], "url = ?", casts[i].Url); err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 
 		if err := utils.InsertOrUpdate(
@@ -258,22 +255,19 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 			&models.CrewsAndMovies{MovieId: movie.Id, CrewId: casts[i].Id},
 			&models.CrewsAndMovies{MovieId: movie.Id, CrewId: casts[i].Id},
 		); err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 	}
 
 	// ---------------- SCRAPE GENRES & THEMES ----------------- //
 	genres, themes, err := extractors.ExtractGenresAndThemes(doc.Selection, s.logger)
 	if err != nil {
-		s.errChan <- err
-		return
+		return err
 	}
 
 	for i := range genres {
 		if err := utils.InsertOrUpdate(s.db, s.logger, "genres", &genres[i], "url = ?", genres[i].Url); err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 
 		if err := utils.InsertOrUpdate(
@@ -281,15 +275,13 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 			&models.GenresAndMovies{MovieId: movie.Id, GenreId: genres[i].Id},
 			&models.GenresAndMovies{MovieId: movie.Id, GenreId: genres[i].Id},
 		); err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 	}
 
 	for i := range themes {
 		if err := utils.InsertOrUpdate(s.db, s.logger, "themes", &themes[i], "url = ?", themes[i].Url); err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 
 		if err := utils.InsertOrUpdate(
@@ -297,22 +289,19 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 			&models.ThemesAndMovies{MovieId: movie.Id, ThemeId: themes[i].Id},
 			&models.ThemesAndMovies{MovieId: movie.Id, ThemeId: themes[i].Id},
 		); err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 	}
 
 	// ---------------- SCRAPE CREWS ----------------- //
 	crews, err := extractors.ExtractCrews(doc.Selection, s.logger)
 	if err != nil {
-		s.errChan <- err
-		return
+		return err
 	}
 
 	for i := range crews {
 		if err := utils.InsertOrUpdate(s.db, s.logger, "crews", &crews[i], "url = ?", crews[i].Url); err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 
 		if err := utils.InsertOrUpdate(
@@ -320,23 +309,20 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 			&models.CrewsAndMovies{MovieId: movie.Id, CrewId: crews[i].Id},
 			&models.CrewsAndMovies{MovieId: movie.Id, CrewId: crews[i].Id},
 		); err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 	}
 
 	// ---------------- SCRAPE STUDIOS ----------------- //
 	studios, err := extractors.ExtractStudios(doc.Selection, s.logger)
 	if err != nil {
-		s.errChan <- err
-		return
+		return err
 
 	}
 
 	for i := range studios {
 		if err := utils.InsertOrUpdate(s.db, s.logger, "studios", &studios[i], "url = ?", studios[i].Url); err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 
 		if err := utils.InsertOrUpdate(
@@ -344,16 +330,14 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 			&models.StudiosAndMovies{MovieId: movie.Id, StudioId: studios[i].Id},
 			&models.StudiosAndMovies{MovieId: movie.Id, StudioId: studios[i].Id},
 		); err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 	}
 
 	// ---------------- SCRAPE COUNTRIES ----------------- //
 	countries, err := extractors.ExtractCountries(movie.Id, doc.Selection, s.logger)
 	if err != nil {
-		s.errChan <- err
-		return
+		return err
 	}
 
 	for i := range countries {
@@ -362,16 +346,14 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 			"movie_id = ? AND country = ?",
 			countries[i].MovieId, countries[i].Country,
 		); err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 	}
 
 	// ---------------- SCRAPE LANGUAGES ----------------- //
 	languages, err := extractors.ExtractLanguages(movie.Id, doc.Selection, s.logger)
 	if err != nil {
-		s.errChan <- err
-		return
+		return err
 	}
 
 	for i := range languages {
@@ -380,16 +362,14 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 			"movie_id = ? AND language = ? AND is_primary = ?",
 			languages[i].MovieId, languages[i].Language, languages[i].IsPrimary,
 		); err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 	}
 
 	// ---------------- SCRAPE LANGUAGES ----------------- //
 	releases, err := extractors.ExtractReleases(movie.Id, doc.Selection, s.logger)
 	if err != nil {
-		s.errChan <- err
-		return
+		return err
 	}
 
 	for i := range releases {
@@ -399,8 +379,9 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) {
 			&releases[i],
 			"movie_id", "date", "release_type", "country", "age_rating",
 		); err != nil {
-			s.errChan <- err
-			return
+			return err
 		}
 	}
+
+	return nil
 }
