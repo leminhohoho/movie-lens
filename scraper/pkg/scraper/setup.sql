@@ -13,7 +13,9 @@ CREATE TABLE movies (
     name TEXT NOT NULL,
     duration INT,
     poster_url TEXT,
-    backdrop_url TEXT
+    backdrop_url TEXT,
+    desc TEXT,
+    trailer_url TEXT
 );
 
 

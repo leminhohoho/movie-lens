@@ -115,6 +115,16 @@ func ExtractMovie(filmUrl string, doc *goquery.Selection, logger *slog.Logger) (
 		logger.Warn("movie does not have backdrop", "url", movie.Url)
 	}
 
+	filmDesc := strings.TrimSpace(doc.Find("#film-page-wrapper > div.col-17 > section.section.col-10.col-main > section > div.review.body-text.-prose.-hero.prettify > div > p").Text())
+	if filmDesc != "" {
+		movie.Desc = &filmDesc
+	}
+
+	trailerUrl, exists := doc.Find("#js-poster-col > section.watch-panel.js-watch-panel > div.header > p > a").Attr("href")
+	if exists {
+		movie.TrailerUrl = &trailerUrl
+	}
+
 	return movie, nil
 }
 

@@ -1,11 +1,9 @@
 package models
 
-import "time"
-
 type User struct {
 	Id   int
-	Url  string
-	Name string
+	Url  string `json:"url"`
+	Name string `json:"name"`
 }
 
 type Movie struct {
@@ -15,6 +13,8 @@ type Movie struct {
 	Duration    *int
 	PosterUrl   *string
 	BackdropUrl *string
+	Desc        *string
+	TrailerUrl  *string
 }
 
 type Crew struct {
@@ -32,9 +32,9 @@ type CrewsAndMovies struct {
 type UserAndMovie struct {
 	UserId  int
 	MovieId int
-	Date    time.Time
+	Date    string
 	IsWatch bool
-	Rating  float32
+	Rating  *float32
 	IsLoved bool
 	Review  *string
 }

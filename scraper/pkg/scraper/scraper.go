@@ -27,12 +27,20 @@ const (
 //go:embed setup.sql
 var schema string
 
+//go:embed jquery.slim.min.js
+var jqueryLib string
+
+//go:embed extractors/members_query.js
+var memberQuery string
+
 type Scraper struct {
-	baseCtx context.Context
-	db      *gorm.DB
-	logger  *slog.Logger
-	errChan chan error
-	maxPage int
+	baseCtx  context.Context
+	db       *gorm.DB
+	logger   *slog.Logger
+	errChan  chan error
+	maxPage  int
+	interval int
+	counter  int
 }
 
 func NewScraper(logger *slog.Logger, errChan chan error) (*Scraper, error) {
@@ -43,6 +51,10 @@ func NewScraper(logger *slog.Logger, errChan chan error) (*Scraper, error) {
 	browserAddr := os.Getenv("BROWSER_ADDR")
 	userDataDir := os.Getenv("USER_DATA_DIR")
 	maxPage, err := strconv.Atoi(os.Getenv("MAX_PAGE"))
+	if err != nil {
+		return nil, err
+	}
+	interval, err := strconv.Atoi(os.Getenv("INTERVAL"))
 	if err != nil {
 		return nil, err
 	}
@@ -96,16 +108,33 @@ func NewScraper(logger *slog.Logger, errChan chan error) (*Scraper, error) {
 	}
 
 	return &Scraper{
-		baseCtx: baseCtx,
-		db:      db,
-		logger:  logger,
-		errChan: errChan,
-		maxPage: maxPage,
+		baseCtx:  baseCtx,
+		db:       db,
+		logger:   logger,
+		errChan:  errChan,
+		maxPage:  maxPage,
+		interval: interval,
 	}, nil
 }
 
+func (s *Scraper) execute(ctx context.Context, actions ...chromedp.Action) error {
+	if s.counter == s.interval {
+		time.Sleep(time.Second * 300)
+		s.counter = 0
+	}
+
+	s.counter++
+
+	return chromedp.Run(ctx, actions...)
+}
+
 func (s *Scraper) Run() {
-	ctx, cancel := utils.NewTab(s.baseCtx, s.logger)
+	ctx, cancel, err := utils.NewTab(s.baseCtx, s.logger, utils.InjectLibToCdp(jqueryLib, s.logger))
+	if err != nil {
+		s.errChan <- err
+		return
+	}
+
 	defer cancel()
 
 	if err := s.scrapeMembersPages(ctx); err != nil {
@@ -114,21 +143,17 @@ func (s *Scraper) Run() {
 }
 
 func (s *Scraper) scrapeMembersPages(ctx context.Context) error {
-	for i := range s.maxPage {
-		var doc *goquery.Document
+	var users []models.User
 
-		if err := chromedp.Run(ctx,
-			utils.NavigateTillTrigger("https://letterboxd.com"+fmt.Sprintf("/members/popular/page/%d/", i+1), s.logger,
+	for i := range s.maxPage {
+		if err := s.execute(ctx,
+			utils.NavigateTillTrigger(
+				chromedp.Navigate("https://letterboxd.com"+fmt.Sprintf("/members/popular/page/%d/", i+1)), s.logger,
 				chromedp.WaitVisible("#content > div > div > section > table > tbody > tr:last-child"),
 				utils.Delay(time.Second*2, time.Millisecond*300),
 			),
-			utils.ToGoqueryDoc("html", &doc),
+			chromedp.EvaluateAsDevTools(memberQuery, &users, chromedp.EvalAsValue),
 		); err != nil {
-			return err
-		}
-
-		users, err := extractors.ExtractUsers(doc.Selection, s.logger)
-		if err != nil {
 			return err
 		}
 
@@ -152,8 +177,9 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) error {
 	lastPageSel := "#content > div > div > section > div.pagination > div.paginate-pages > ul > li:last-child > a"
 	lastMovieSel := "#content > div > div > section > div.poster-grid > ul > li:last-child > div > div > a > span.overlay"
 
-	if err := chromedp.Run(ctx,
-		utils.NavigateTillTrigger(prefix+user.Url+"films/by/date/", s.logger,
+	if err := s.execute(ctx,
+		utils.NavigateTillTrigger(
+			chromedp.Navigate(prefix+user.Url+"films/by/date/"), s.logger,
 			chromedp.WaitVisible(lastMovieSel),
 			utils.Delay(time.Second*2, time.Millisecond*300),
 		),
@@ -170,7 +196,7 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) error {
 	for i := 1; i <= maxFilmsPage; i++ {
 		var doc *goquery.Document
 
-		if err := chromedp.Run(ctx,
+		if err := s.execute(ctx,
 			chromedp.ActionFunc(func(localCtx context.Context) error {
 				if i != 1 {
 					return chromedp.Click(nextBtnSel).Do(localCtx)
@@ -190,8 +216,17 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) error {
 		}
 
 		for _, filmUrl := range filmUrls {
-			moviePageCtx, moviePageCancel := utils.NewTab(ctx, s.logger)
-			userActivitiesPageCtx, userActivitiesPageCancel := utils.NewTab(ctx, s.logger)
+			moviePageCtx, moviePageCancel, err := utils.NewTab(ctx, s.logger, utils.InjectLibToCdp(jqueryLib, s.logger))
+			if err != nil {
+				return err
+			}
+
+			userActivitiesPageCtx, userActivitiesPageCancel, err := utils.NewTab(
+				ctx, s.logger, utils.InjectLibToCdp(jqueryLib, s.logger),
+			)
+			if err != nil {
+				return err
+			}
 
 			if err := s.scrapeMovie(moviePageCtx, filmUrl); err != nil {
 				return err
@@ -217,10 +252,16 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) error {
 }
 
 func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) error {
+	if s.db.Table("movies").Where("url = ?", filmUrl).Find(&[]models.Movie{}).RowsAffected > 0 {
+		s.logger.Warn("movie already in db, skipping", "url", filmUrl)
+		return nil
+	}
+
 	var doc *goquery.Document
 
-	if err := chromedp.Run(ctx,
-		utils.NavigateTillTrigger(prefix+filmUrl, s.logger,
+	if err := s.execute(ctx,
+		utils.NavigateTillTrigger(
+			chromedp.Navigate(prefix+filmUrl), s.logger,
 			utils.Delay(time.Second*2, time.Millisecond*300),
 			chromedp.ActionFunc(func(localCtx context.Context) error {
 				var backdropExists bool
@@ -403,14 +444,13 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) error {
 }
 
 func (s *Scraper) scrapeUserFilmActivities(ctx context.Context, user models.User, movie models.Movie) error {
-	var err error
-
 	url := prefix + path.Join(user.Url, movie.Url, "/activity")
 
 	var doc *goquery.Document
 
-	if err := chromedp.Run(ctx,
-		utils.NavigateTillTrigger(url, s.logger,
+	if err := s.execute(ctx,
+		utils.NavigateTillTrigger(
+			chromedp.Navigate(url), s.logger,
 			utils.Delay(time.Second*2, time.Millisecond*300),
 			chromedp.WaitVisible("#activity-table-body > section.activity-row.no-activity-message > p"),
 			utils.Delay(time.Second*1, time.Millisecond*300),
@@ -432,11 +472,7 @@ func (s *Scraper) scrapeUserFilmActivities(ctx context.Context, user models.User
 			continue
 		}
 
-		userAndMovie.Date, err = time.Parse(time.RFC3339, strings.TrimSpace(activityDateStr))
-		if err != nil {
-			s.logger.Warn("error parsing activity date", "msg", err.Error())
-			continue
-		}
+		userAndMovie.Date = strings.TrimSpace(activityDateStr)
 
 		content := node.Find("div > p > a > span.context").Text()
 
@@ -452,7 +488,10 @@ func (s *Scraper) scrapeUserFilmActivities(ctx context.Context, user models.User
 				userAndMovie.IsWatch = true
 			case "rated":
 				ratingStr := node.Find("div > p > span.rating").Text()
-				userAndMovie.Rating = float32(strings.Count(ratingStr, "★")) + float32(strings.Count(ratingStr, "½"))/2
+				if ratingStr != "" {
+					rating := float32(strings.Count(ratingStr, "★")) + float32(strings.Count(ratingStr, "½"))/2
+					userAndMovie.Rating = &rating
+				}
 			case "reviewed":
 				reviewUrl, exists := node.Find("div > p > a.target").Attr("href")
 				if !exists {
@@ -460,7 +499,11 @@ func (s *Scraper) scrapeUserFilmActivities(ctx context.Context, user models.User
 					continue
 				}
 
-				reviewPageCtx, reviewPageCancel := utils.NewTab(ctx, s.logger)
+				reviewPageCtx, reviewPageCancel, err := utils.NewTab(ctx, s.logger, utils.InjectLibToCdp(jqueryLib, s.logger))
+				if err != nil {
+					return err
+				}
+
 				review, err := s.scrapeUserReviewPage(reviewPageCtx, reviewUrl)
 				if err != nil {
 					return err
@@ -494,8 +537,9 @@ func (s *Scraper) scrapeUserReviewPage(ctx context.Context, reviewUrl string) (s
 	moviePosterSel := "#content > div > div > section > div.col-4.gutter-right-1 > section.poster-list.-p150.el.col.viewing-poster-container > div > div > a > span.overlay"
 	spoilerBtnSel := "#content > div > div > section > section > div.review.body-text.-prose.-hero.-loose > div.js-spoiler-container > div > div > a"
 
-	if err := chromedp.Run(ctx,
-		utils.NavigateTillTrigger(prefix+reviewUrl, s.logger,
+	if err := s.execute(ctx,
+		utils.NavigateTillTrigger(
+			chromedp.Navigate(prefix+reviewUrl), s.logger,
 			utils.Delay(time.Second*2, time.Millisecond*300),
 			chromedp.WaitVisible(moviePosterSel),
 			utils.Delay(time.Second*1, time.Millisecond*300),

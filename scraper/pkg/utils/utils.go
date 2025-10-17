@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"gorm.io/gorm"
 )
@@ -53,30 +54,38 @@ func InsertOrUpdate(db *gorm.DB, logger *slog.Logger, table string, dest interfa
 
 // NewTab create a new chromium window with additional listeners for logging.
 // It takes a based chromedp.Context with a *sloger.Logger to log informations.
-func NewTab(ctx context.Context, logger *slog.Logger) (context.Context, context.CancelFunc) {
+func NewTab(ctx context.Context, logger *slog.Logger, actions ...chromedp.Action) (context.Context, context.CancelFunc, error) {
 	cdpCtx, cancel := chromedp.NewContext(ctx)
 
-	go chromedp.ListenTarget(cdpCtx, func(ev any) {
-		switch e := ev.(type) {
-		case *network.EventRequestWillBeSent:
-			logger.Debug(
-				"request to be sent",
-				"url", e.Request.URL,
-				"method", e.Request.Method,
-			)
-		case *network.EventResponseReceived:
-			logger.Debug(
-				"response recieved",
-				"url", e.Response.URL,
-				"status_code", e.Response.Status,
-				"content_type", e.Response.MimeType,
-			)
-		}
+	chromedp.ListenTarget(cdpCtx, func(ev any) {
+		go func() {
+			switch e := ev.(type) {
+			case *network.EventRequestWillBeSent:
+				logger.Debug(
+					"request to be sent",
+					"url", e.Request.URL,
+					"method", e.Request.Method,
+				)
+			case *network.EventResponseReceived:
+				logger.Debug(
+					"response recieved",
+					"url", e.Response.URL,
+					"status_code", e.Response.Status,
+					"content_type", e.Response.MimeType,
+				)
+			}
+		}()
 	})
 
-	return cdpCtx, cancel
+	if err := chromedp.Run(cdpCtx, actions...); err != nil {
+		return nil, nil, err
+	}
+
+	return cdpCtx, cancel, nil
 }
 
+// MultiSplit split the string using multiple separators.
+// It has the same effect of using multiple strings.Split()
 func MultiSplit(s string, seps ...string) []string {
 	if len(seps) == 0 {
 		return []string{s}
@@ -91,4 +100,18 @@ func MultiSplit(s string, seps ...string) []string {
 	}
 
 	return splitted
+}
+
+// InjectLibToCdp inject a script to be used when evaluating Javascript.
+// The injected script is persisted through pages within a context. Creating new context require re-injection.
+func InjectLibToCdp(script string, logger *slog.Logger) chromedp.ActionFunc {
+	return func(ctx context.Context) error {
+		if _, err := page.AddScriptToEvaluateOnNewDocument(script).Do(ctx); err != nil {
+			return err
+		}
+
+		logger.Debug("script loaded for this target")
+
+		return nil
+	}
 }

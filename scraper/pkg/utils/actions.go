@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"net/http"
 	"strings"
 	"time"
 
@@ -50,13 +51,13 @@ func ToGoqueryDoc(sel string, doc **goquery.Document) chromedp.ActionFunc {
 // NavigateTillTrigger run chromedp.Navigate() and a list of chromedp.Action simultaneously (the actions are ran sequentially).
 // If the actions are all finished, the function will close.
 // If no action is provided, it will run chromedp.Navigate concurrently
-func NavigateTillTrigger(url string, logger *slog.Logger, actions ...chromedp.Action) chromedp.ActionFunc {
+func NavigateTillTrigger(actionToTrigger chromedp.Action, logger *slog.Logger, actions ...chromedp.Action) chromedp.ActionFunc {
 	return func(ctx context.Context) error {
 		navErrChan := make(chan error, 1)
 		actErrChan := make(chan error, 1)
 
-		logger.Debug("start navigation", "url", url, "tags", []string{"helper"})
-		go func() { navErrChan <- chromedp.Navigate(url).Do(ctx) }()
+		logger.Debug("start navigation", "tags", []string{"helper"})
+		go func() { navErrChan <- ActionWithRetries(3, actionToTrigger).Do(ctx) }()
 		go func() {
 			for i, action := range actions {
 				err := action.Do(ctx)
@@ -82,5 +83,29 @@ func NavigateTillTrigger(url string, logger *slog.Logger, actions ...chromedp.Ac
 				return ctx.Err()
 			}
 		}
+	}
+}
+
+// ActionWithRetries run an action that triggers http request and retry it if the request failed.
+// The action must invoke HTTP request, otherwise it will be blocked until the context is cancelled.
+func ActionWithRetries(retries int, action chromedp.Action) chromedp.ActionFunc {
+	return func(ctx context.Context) error {
+		for i := range retries {
+			res, err := chromedp.RunResponse(ctx, action)
+			if err != nil {
+				return err
+			}
+
+			switch int(res.Status) {
+			case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+				advance := 30000 * (i + 1) / 3
+				time.Sleep(time.Second*30 + time.Millisecond*time.Duration(advance))
+				continue
+			case http.StatusOK:
+				return nil
+			}
+		}
+
+		return nil
 	}
 }
