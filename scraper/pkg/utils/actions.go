@@ -6,10 +6,13 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"os"
+	"path"
 	"strings"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
 
@@ -104,6 +107,42 @@ func ActionWithRetries(retries int, action chromedp.Action) chromedp.ActionFunc 
 			case http.StatusOK:
 				return nil
 			}
+		}
+
+		return nil
+	}
+}
+
+func ScreenShot(pd string, logger *slog.Logger, date time.Time, params ...string) chromedp.ActionFunc {
+	return func(ctx context.Context) error {
+		var picbuf []byte
+
+		if err := chromedp.Run(ctx,
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				var err error
+
+				picbuf, err = page.CaptureScreenshot().
+					WithFormat(page.CaptureScreenshotFormatWebp).
+					WithCaptureBeyondViewport(true).
+					Do(ctx)
+				if err != nil {
+					return err
+				}
+
+				return nil
+			}),
+		); err != nil {
+			return err
+		}
+
+		name_fragments := []string{date.Format(time.RFC3339)}
+		name_fragments = append(name_fragments, params...)
+
+		filename := strings.Join(name_fragments, "_") + ".webp"
+		filename = strings.ReplaceAll(filename, "/", "-")
+
+		if err := os.WriteFile(path.Join(pd, filename), picbuf, 0644); err != nil {
+			return err
 		}
 
 		return nil

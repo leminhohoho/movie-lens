@@ -129,7 +129,10 @@ func (s *Scraper) execute(ctx context.Context, actions ...chromedp.Action) error
 }
 
 func (s *Scraper) Run() {
-	ctx, cancel, err := utils.NewTab(s.baseCtx, s.logger, utils.InjectLibToCdp(jqueryLib, s.logger))
+	ctx, cancel, err := utils.NewTab(s.baseCtx, s.logger,
+		chromedp.EmulateViewport(720, 1280),
+		utils.InjectLibToCdp(jqueryLib, s.logger),
+	)
 	if err != nil {
 		s.errChan <- err
 		return
@@ -152,6 +155,7 @@ func (s *Scraper) scrapeMembersPages(ctx context.Context) error {
 				chromedp.WaitVisible("#content > div > div > section > table > tbody > tr:last-child"),
 				utils.Delay(time.Second*2, time.Millisecond*300),
 			),
+			utils.ScreenShot(os.Getenv("SCREENSHOT_DIR"), s.logger, time.Now(), fmt.Sprintf("member-page-%d", i+1)),
 			chromedp.EvaluateAsDevTools(memberQuery, &users, chromedp.EvalAsValue),
 		); err != nil {
 			return err
@@ -183,6 +187,7 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) error {
 			chromedp.WaitVisible(lastMovieSel),
 			utils.Delay(time.Second*2, time.Millisecond*300),
 		),
+		utils.ScreenShot(os.Getenv("SCREENSHOT_DIR"), s.logger, time.Now(), "user-page", user.Name),
 		chromedp.Text(lastPageSel, &maxFilmsPageStr),
 	); err != nil {
 		return err
@@ -206,6 +211,7 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) error {
 			}),
 			chromedp.WaitVisible(lastMovieSel),
 			utils.Delay(time.Second*2, time.Millisecond*300),
+			utils.ScreenShot(os.Getenv("SCREENSHOT_DIR"), s.logger, time.Now(), "user-page", user.Name),
 			utils.ToGoqueryDoc("html", &doc),
 		); err != nil {
 			return err
@@ -216,13 +222,18 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) error {
 		}
 
 		for _, filmUrl := range filmUrls {
-			moviePageCtx, moviePageCancel, err := utils.NewTab(ctx, s.logger, utils.InjectLibToCdp(jqueryLib, s.logger))
+			moviePageCtx, moviePageCancel, err := utils.NewTab(ctx, s.logger,
+				chromedp.EmulateViewport(720, 1280),
+				utils.InjectLibToCdp(jqueryLib, s.logger),
+			)
 			if err != nil {
 				return err
 			}
 
 			userActivitiesPageCtx, userActivitiesPageCancel, err := utils.NewTab(
-				ctx, s.logger, utils.InjectLibToCdp(jqueryLib, s.logger),
+				ctx, s.logger,
+				chromedp.EmulateViewport(720, 1280),
+				utils.InjectLibToCdp(jqueryLib, s.logger),
 			)
 			if err != nil {
 				return err
@@ -281,6 +292,7 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) error {
 			}),
 			utils.Delay(time.Second*1, time.Millisecond*300),
 		),
+		utils.ScreenShot(os.Getenv("SCREENSHOT_DIR"), s.logger, time.Now(), strings.Split(filmUrl, "/")[2]),
 		utils.ToGoqueryDoc("html", &doc),
 	); err != nil {
 		return err
@@ -289,7 +301,8 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) error {
 	// ---------------- SCRAPE MOVIE ----------------- //
 	movie, err := extractors.ExtractMovie(filmUrl, doc.Selection, s.logger)
 	if err != nil {
-		return err
+		s.logger.Error("error extracting information from movie", "msg", err.Error())
+		return nil
 	}
 
 	if err := utils.InsertOrUpdate(s.db, s.logger, "movies", &movie, "url = ?", movie.Url); err != nil {
@@ -455,6 +468,9 @@ func (s *Scraper) scrapeUserFilmActivities(ctx context.Context, user models.User
 			chromedp.WaitVisible("#activity-table-body > section.activity-row.no-activity-message > p"),
 			utils.Delay(time.Second*1, time.Millisecond*300),
 		),
+		utils.ScreenShot(
+			os.Getenv("SCREENSHOT_DIR"), s.logger, time.Now(), "user-activity-page", user.Name, movie.Name,
+		),
 		utils.ToGoqueryDoc("html", &doc),
 	); err != nil {
 		return err
@@ -499,7 +515,10 @@ func (s *Scraper) scrapeUserFilmActivities(ctx context.Context, user models.User
 					continue
 				}
 
-				reviewPageCtx, reviewPageCancel, err := utils.NewTab(ctx, s.logger, utils.InjectLibToCdp(jqueryLib, s.logger))
+				reviewPageCtx, reviewPageCancel, err := utils.NewTab(ctx, s.logger,
+					chromedp.EmulateViewport(360, 640),
+					utils.InjectLibToCdp(jqueryLib, s.logger),
+				)
 				if err != nil {
 					return err
 				}
@@ -561,6 +580,9 @@ func (s *Scraper) scrapeUserReviewPage(ctx context.Context, reviewUrl string) (s
 
 			return nil
 		}),
+		utils.ScreenShot(
+			os.Getenv("SCREENSHOT_DIR"), s.logger, time.Now(), "user-review-page",
+		),
 		chromedp.Text(reviewContentSel, &review),
 	); err != nil {
 		return "", err
