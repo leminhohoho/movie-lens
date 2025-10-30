@@ -3,6 +3,7 @@ package scraper
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -119,6 +120,7 @@ func NewScraper(logger *slog.Logger, errChan chan error) (*Scraper, error) {
 
 func (s *Scraper) execute(ctx context.Context, actions ...chromedp.Action) error {
 	if s.counter == s.interval {
+		s.logger.Info("Sleep for 5 minutes")
 		time.Sleep(time.Second * 300)
 		s.counter = 0
 	}
@@ -153,7 +155,7 @@ func (s *Scraper) scrapeMembersPages(ctx context.Context) error {
 			utils.NavigateTillTrigger(
 				chromedp.Navigate("https://letterboxd.com"+fmt.Sprintf("/members/popular/page/%d/", i+1)), s.logger,
 				chromedp.WaitVisible("#content > div > div > section > table > tbody > tr:last-child"),
-				utils.Delay(time.Second*2, time.Millisecond*300),
+				utils.Delay(time.Second*1, time.Millisecond*300),
 			),
 			utils.ScreenShot(os.Getenv("SCREENSHOT_DIR"), s.logger, time.Now(), fmt.Sprintf("member-page-%d", i+1)),
 			chromedp.EvaluateAsDevTools(memberQuery, &users, chromedp.EvalAsValue),
@@ -185,7 +187,7 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) error {
 		utils.NavigateTillTrigger(
 			chromedp.Navigate(prefix+user.Url+"films/by/date/"), s.logger,
 			chromedp.WaitVisible(lastMovieSel),
-			utils.Delay(time.Second*2, time.Millisecond*300),
+			utils.Delay(time.Second*1, time.Millisecond*300),
 		),
 		utils.ScreenShot(os.Getenv("SCREENSHOT_DIR"), s.logger, time.Now(), "user-page", user.Name),
 		chromedp.Text(lastPageSel, &maxFilmsPageStr),
@@ -198,7 +200,7 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) error {
 		return err
 	}
 
-	for i := 1; i <= maxFilmsPage; i++ {
+	for i := 1; i <= min(maxFilmsPage, 7); i++ {
 		var doc *goquery.Document
 
 		if err := s.execute(ctx,
@@ -210,7 +212,7 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) error {
 				return nil
 			}),
 			chromedp.WaitVisible(lastMovieSel),
-			utils.Delay(time.Second*2, time.Millisecond*300),
+			utils.Delay(time.Second*1, time.Millisecond*300),
 			utils.ScreenShot(os.Getenv("SCREENSHOT_DIR"), s.logger, time.Now(), "user-page", user.Name),
 			utils.ToGoqueryDoc("html", &doc),
 		); err != nil {
@@ -230,15 +232,6 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) error {
 				return err
 			}
 
-			userActivitiesPageCtx, userActivitiesPageCancel, err := utils.NewTab(
-				ctx, s.logger,
-				chromedp.EmulateViewport(720, 1280),
-				utils.InjectLibToCdp(jqueryLib, s.logger),
-			)
-			if err != nil {
-				return err
-			}
-
 			if err := s.scrapeMovie(moviePageCtx, filmUrl); err != nil {
 				return err
 			}
@@ -249,13 +242,11 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) error {
 				return err
 			}
 
-			moviePageCancel()
-
-			if err := s.scrapeUserFilmActivities(userActivitiesPageCtx, user, movie); err != nil {
+			if err := s.scrapeUserFilmActivities(moviePageCtx, user, movie); err != nil {
 				return err
 			}
 
-			userActivitiesPageCancel()
+			moviePageCancel()
 		}
 	}
 
@@ -273,7 +264,7 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) error {
 	if err := s.execute(ctx,
 		utils.NavigateTillTrigger(
 			chromedp.Navigate(prefix+filmUrl), s.logger,
-			utils.Delay(time.Second*2, time.Millisecond*300),
+			utils.Delay(time.Second*1, time.Millisecond*300),
 			chromedp.ActionFunc(func(localCtx context.Context) error {
 				var backdropExists bool
 
@@ -457,6 +448,13 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) error {
 }
 
 func (s *Scraper) scrapeUserFilmActivities(ctx context.Context, user models.User, movie models.Movie) error {
+	if s.db.Table("users_and_movies").Where("movie_id = ? AND user_id = ?", movie.Id, user.Id).Find(&[]models.UserAndMovie{}).RowsAffected > 0 {
+		s.logger.Warn("activity already in db, skipping", "user_id", user.Id, "movie_id", movie.Id)
+		return nil
+	}
+
+	s.logger.Warn("scraping user activity", "movie_id", movie.Id, "user_id", user.Id)
+
 	url := prefix + path.Join(user.Url, movie.Url, "/activity")
 
 	var doc *goquery.Document
@@ -464,7 +462,7 @@ func (s *Scraper) scrapeUserFilmActivities(ctx context.Context, user models.User
 	if err := s.execute(ctx,
 		utils.NavigateTillTrigger(
 			chromedp.Navigate(url), s.logger,
-			utils.Delay(time.Second*2, time.Millisecond*300),
+			utils.Delay(time.Second*1, time.Millisecond*300),
 			chromedp.WaitVisible("#activity-table-body > section.activity-row.no-activity-message > p"),
 			utils.Delay(time.Second*1, time.Millisecond*300),
 		),
@@ -478,6 +476,8 @@ func (s *Scraper) scrapeUserFilmActivities(ctx context.Context, user models.User
 
 	activityNodes := doc.Find("#activity-table-body > section[data-activity-id]")
 
+	usersAndMovies := []models.UserAndMovie{}
+
 	for i := range activityNodes.Length() {
 		node := activityNodes.Eq(i)
 		userAndMovie := models.UserAndMovie{UserId: user.Id, MovieId: movie.Id}
@@ -490,52 +490,67 @@ func (s *Scraper) scrapeUserFilmActivities(ctx context.Context, user models.User
 
 		userAndMovie.Date = strings.TrimSpace(activityDateStr)
 
-		content := node.Find("div > p > a > span.context").Text()
+		contentNode := node.Find("div > p")
+		// contentNode.Find("a.target").Children().Each(func(i int, s *goquery.Selection) {
+		// 	if goquery.NodeName(s) == "#text" {
+		// 		s.SetText("")
+		// 	}
+		// })
 
-		actions := utils.MultiSplit(content, "and", ",")
+		content := contentNode.Text()
 
-		for i := range actions {
-			action := strings.TrimSpace(actions[i])
+		if strings.Contains(content, "liked") && !strings.Contains(content, "review of") {
+			userAndMovie.IsLoved = true
+		}
 
-			switch action {
-			case "liked":
-				userAndMovie.IsLoved = true
-			case "watched", "rewatched":
-				userAndMovie.IsWatch = true
-			case "rated":
-				ratingStr := node.Find("div > p > span.rating").Text()
-				if ratingStr != "" {
-					rating := float32(strings.Count(ratingStr, "★")) + float32(strings.Count(ratingStr, "½"))/2
-					userAndMovie.Rating = &rating
-				}
-			case "reviewed":
-				reviewUrl, exists := node.Find("div > p > a.target").Attr("href")
-				if !exists {
-					s.logger.Warn("review url is empty, skipping")
-					continue
-				}
+		if strings.Contains(content, "watched") || strings.Contains(content, "rewatched") {
+			userAndMovie.IsWatch = true
+		}
 
-				reviewPageCtx, reviewPageCancel, err := utils.NewTab(ctx, s.logger,
-					chromedp.EmulateViewport(360, 640),
-					utils.InjectLibToCdp(jqueryLib, s.logger),
-				)
-				if err != nil {
-					return err
-				}
-
-				review, err := s.scrapeUserReviewPage(reviewPageCtx, reviewUrl)
-				if err != nil {
-					return err
-				}
-
-				reviewPageCancel()
-
-				if review != "" {
-					userAndMovie.Review = &review
-				}
+		if strings.Contains(content, "rated") {
+			ratingStr := node.Find("div > p > span.rating").Text()
+			if ratingStr != "" {
+				rating := float32(strings.Count(ratingStr, "★")) + float32(strings.Count(ratingStr, "½"))/2
+				userAndMovie.Rating = &rating
 			}
 		}
 
+		if strings.Contains(content, "reviewed") {
+			reviewUrl, exists := node.Find("div > p > a.target").Attr("href")
+			if !exists {
+				s.logger.Warn("review url is empty, skipping")
+				continue
+			}
+
+			reviewPageCtx, reviewPageCancel, err := utils.NewTab(ctx, s.logger,
+				chromedp.EmulateViewport(360, 640),
+				utils.InjectLibToCdp(jqueryLib, s.logger),
+			)
+			if err != nil {
+				return err
+			}
+
+			review, err := s.scrapeUserReviewPage(reviewPageCtx, reviewUrl)
+			if err != nil {
+				return err
+			}
+
+			reviewPageCancel()
+
+			if review != "" {
+				userAndMovie.Review = &review
+			}
+		}
+
+		if !userAndMovie.IsLoved && !userAndMovie.IsWatch && userAndMovie.Rating == nil && userAndMovie.Review == nil {
+			s.logger.Warn("activity is invalid", "movie_id", movie.Id, "user_id", user.Id, "activity", userAndMovie)
+			continue
+		}
+
+		usersAndMovies = append(usersAndMovies, userAndMovie)
+	}
+
+	for _, userAndMovie := range usersAndMovies {
 		if err := utils.InsertOrUpdate(s.db, s.logger,
 			"users_and_movies",
 			&userAndMovie,
@@ -549,22 +564,36 @@ func (s *Scraper) scrapeUserFilmActivities(ctx context.Context, user models.User
 	return nil
 }
 
+var errReviewRemoved = errors.New("review has been removed")
+
 func (s *Scraper) scrapeUserReviewPage(ctx context.Context, reviewUrl string) (string, error) {
 	var review string
 
 	reviewContentSel := "#content > div > div > section > section > div.review.body-text.-prose.-hero.-loose > div > div > div > p"
 	moviePosterSel := "#content > div > div > section > div.col-4.gutter-right-1 > section.poster-list.-p150.el.col.viewing-poster-container > div > div > a > span.overlay"
 	spoilerBtnSel := "#content > div > div > section > section > div.review.body-text.-prose.-hero.-loose > div.js-spoiler-container > div > div > a"
+	reviewRemovedSel := "#content > div > div > section > section > div.review.body-text.-prose.-hero.-loose > div > div > div.moderation-details"
 
 	if err := s.execute(ctx,
 		utils.NavigateTillTrigger(
 			chromedp.Navigate(prefix+reviewUrl), s.logger,
-			utils.Delay(time.Second*2, time.Millisecond*300),
+			utils.Delay(time.Second*1, time.Millisecond*300),
 			chromedp.WaitVisible(moviePosterSel),
 			utils.Delay(time.Second*1, time.Millisecond*300),
 		),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var spoilerAlert bool
+			var reviewRemoved bool
+
+			if err := chromedp.Evaluate(
+				fmt.Sprintf(`document.querySelector("%s") != null`, reviewRemovedSel), &reviewRemoved,
+			).Do(ctx); err != nil {
+				return err
+			}
+
+			if reviewRemoved {
+				return errReviewRemoved
+			}
 
 			if err := chromedp.Evaluate(
 				fmt.Sprintf(`document.querySelector("%s") != null`, spoilerBtnSel), &spoilerAlert,
@@ -585,6 +614,9 @@ func (s *Scraper) scrapeUserReviewPage(ctx context.Context, reviewUrl string) (s
 		),
 		chromedp.Text(reviewContentSel, &review),
 	); err != nil {
+		if errors.Is(err, errReviewRemoved) {
+			return "", nil
+		}
 		return "", err
 	}
 
