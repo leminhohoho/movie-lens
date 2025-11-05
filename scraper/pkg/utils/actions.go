@@ -126,7 +126,7 @@ func ScreenShot(pd string, logger *slog.Logger, date time.Time, params ...string
 					WithCaptureBeyondViewport(true).
 					Do(ctx)
 				if err != nil {
-					return err
+					logger.Warn("error taking screen shot", "msg", err.Error())
 				}
 
 				return nil

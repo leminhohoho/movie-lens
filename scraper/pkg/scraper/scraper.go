@@ -148,14 +148,15 @@ func (s *Scraper) Run() {
 }
 
 func (s *Scraper) scrapeMembersPages(ctx context.Context) error {
-	var users []models.User
 
 	for i := range s.maxPage {
+		var users []models.User
+
 		if err := s.execute(ctx,
 			utils.NavigateTillTrigger(
-				chromedp.Navigate("https://letterboxd.com"+fmt.Sprintf("/members/popular/page/%d/", i+1)), s.logger,
+				chromedp.Navigate("https://letterboxd.com"+fmt.Sprintf("/members/popular/page/%d/", i+3)), s.logger,
 				chromedp.WaitVisible("#content > div > div > section > table > tbody > tr:last-child"),
-				utils.Delay(time.Second*1, time.Millisecond*300),
+				utils.Delay(time.Millisecond*1500, time.Millisecond*300),
 			),
 			utils.ScreenShot(os.Getenv("SCREENSHOT_DIR"), s.logger, time.Now(), fmt.Sprintf("member-page-%d", i+1)),
 			chromedp.EvaluateAsDevTools(memberQuery, &users, chromedp.EvalAsValue),
@@ -187,7 +188,7 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) error {
 		utils.NavigateTillTrigger(
 			chromedp.Navigate(prefix+user.Url+"films/by/date/"), s.logger,
 			chromedp.WaitVisible(lastMovieSel),
-			utils.Delay(time.Second*1, time.Millisecond*300),
+			utils.Delay(time.Millisecond*1500, time.Millisecond*300),
 		),
 		utils.ScreenShot(os.Getenv("SCREENSHOT_DIR"), s.logger, time.Now(), "user-page", user.Name),
 		chromedp.Text(lastPageSel, &maxFilmsPageStr),
@@ -212,7 +213,7 @@ func (s *Scraper) scrapeUserPage(ctx context.Context, user models.User) error {
 				return nil
 			}),
 			chromedp.WaitVisible(lastMovieSel),
-			utils.Delay(time.Second*1, time.Millisecond*300),
+			utils.Delay(time.Millisecond*1500, time.Millisecond*300),
 			utils.ScreenShot(os.Getenv("SCREENSHOT_DIR"), s.logger, time.Now(), "user-page", user.Name),
 			utils.ToGoqueryDoc("html", &doc),
 		); err != nil {
@@ -264,7 +265,7 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) error {
 	if err := s.execute(ctx,
 		utils.NavigateTillTrigger(
 			chromedp.Navigate(prefix+filmUrl), s.logger,
-			utils.Delay(time.Second*1, time.Millisecond*300),
+			utils.Delay(time.Millisecond*1500, time.Millisecond*300),
 			chromedp.ActionFunc(func(localCtx context.Context) error {
 				var backdropExists bool
 
@@ -281,7 +282,7 @@ func (s *Scraper) scrapeMovie(ctx context.Context, filmUrl string) error {
 
 				return nil
 			}),
-			utils.Delay(time.Second*1, time.Millisecond*300),
+			utils.Delay(time.Millisecond*1500, time.Millisecond*300),
 		),
 		utils.ScreenShot(os.Getenv("SCREENSHOT_DIR"), s.logger, time.Now(), strings.Split(filmUrl, "/")[2]),
 		utils.ToGoqueryDoc("html", &doc),
@@ -462,9 +463,9 @@ func (s *Scraper) scrapeUserFilmActivities(ctx context.Context, user models.User
 	if err := s.execute(ctx,
 		utils.NavigateTillTrigger(
 			chromedp.Navigate(url), s.logger,
-			utils.Delay(time.Second*1, time.Millisecond*300),
+			utils.Delay(time.Millisecond*1500, time.Millisecond*300),
 			chromedp.WaitVisible("#activity-table-body > section.activity-row.no-activity-message > p"),
-			utils.Delay(time.Second*1, time.Millisecond*300),
+			utils.Delay(time.Millisecond*1500, time.Millisecond*300),
 		),
 		utils.ScreenShot(
 			os.Getenv("SCREENSHOT_DIR"), s.logger, time.Now(), "user-activity-page", user.Name, movie.Name,
@@ -567,9 +568,10 @@ func (s *Scraper) scrapeUserFilmActivities(ctx context.Context, user models.User
 var errReviewRemoved = errors.New("review has been removed")
 
 func (s *Scraper) scrapeUserReviewPage(ctx context.Context, reviewUrl string) (string, error) {
+	var doc *goquery.Document
 	var review string
 
-	reviewContentSel := "#content > div > div > section > section > div.review.body-text.-prose.-hero.-loose > div > div > div > p"
+	reviewContentSel := "#content > div > div > section > section > div.review.body-text.-prose.-hero.-loose > div > div > div"
 	moviePosterSel := "#content > div > div > section > div.col-4.gutter-right-1 > section.poster-list.-p150.el.col.viewing-poster-container > div > div > a > span.overlay"
 	spoilerBtnSel := "#content > div > div > section > section > div.review.body-text.-prose.-hero.-loose > div.js-spoiler-container > div > div > a"
 	reviewRemovedSel := "#content > div > div > section > section > div.review.body-text.-prose.-hero.-loose > div > div > div.moderation-details"
@@ -577,9 +579,9 @@ func (s *Scraper) scrapeUserReviewPage(ctx context.Context, reviewUrl string) (s
 	if err := s.execute(ctx,
 		utils.NavigateTillTrigger(
 			chromedp.Navigate(prefix+reviewUrl), s.logger,
-			utils.Delay(time.Second*1, time.Millisecond*300),
+			utils.Delay(time.Millisecond*1500, time.Millisecond*300),
 			chromedp.WaitVisible(moviePosterSel),
-			utils.Delay(time.Second*1, time.Millisecond*300),
+			utils.Delay(time.Millisecond*1500, time.Millisecond*300),
 		),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var spoilerAlert bool
@@ -612,7 +614,11 @@ func (s *Scraper) scrapeUserReviewPage(ctx context.Context, reviewUrl string) (s
 		utils.ScreenShot(
 			os.Getenv("SCREENSHOT_DIR"), s.logger, time.Now(), "user-review-page",
 		),
-		chromedp.Text(reviewContentSel, &review),
+		utils.ToGoqueryDoc(reviewContentSel, &doc),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			review = doc.Text()
+			return nil
+		}),
 	); err != nil {
 		if errors.Is(err, errReviewRemoved) {
 			return "", nil
