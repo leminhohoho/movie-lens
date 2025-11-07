@@ -262,7 +262,7 @@ func ExtractStudios(doc *goquery.Selection, logger *slog.Logger) ([]models.Studi
 		detailLabel := detailLabels.Eq(i)
 
 		detailName := strings.TrimSpace(detailLabel.Find("span:first-child").Text())
-		if detailName != "Studios" {
+		if detailName != "Studios" && detailName != "Studio" {
 			continue
 		}
 
